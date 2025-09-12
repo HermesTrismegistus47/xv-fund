@@ -2235,13 +2235,13 @@ export default function HomePage() {
 					}}>
 						<Stat 
 							label="Total Invested" 
-							value={formatCurrencyClean(o.totalInvested)} 
+							value={formatTokensReceived(o.totalInvested)} 
 							trend="neutral"
 							subtitle="Capital deployed to date"
 						/>
 						<Stat 
 							label="Realised Value" 
-							value={formatCurrencyClean(o.realisedValue)} 
+							value={formatTokensReceived(o.realisedValue)} 
 							trend="neutral"
 							customColor="#000000"
 							subtitle="Cash returned to fund"
@@ -2254,7 +2254,7 @@ export default function HomePage() {
 						/>
 						<Stat 
 							label="Liquid Value" 
-							value={formatCurrencyClean(o.liquidValue)} 
+							value={formatTokensReceived(o.liquidValue)} 
 							trend="neutral"
 							subtitle="Immediately tradeable assets"
 						/>
@@ -2268,7 +2268,7 @@ export default function HomePage() {
 					}}>
 						<Stat 
 							label="Realised P&L" 
-							value={formatCurrencyClean(o.realisedPnL)} 
+							value={formatTokensReceived(o.realisedPnL)} 
 							trend={o.realisedPnL && !o.realisedPnL.includes('-') ? "positive" : "negative"}
 							subtitle="Profit/Loss on exits"
 						/>
@@ -2373,7 +2373,7 @@ export default function HomePage() {
 									lineHeight: 1,
 									fontFamily: '"SF Mono", "Monaco", "Inconsolata", "Roboto Mono", monospace'
 								}}>
-									{formatCurrencyClean(o.liquidValue)}
+									{formatTokensReceived(o.liquidValue)}
 								</div>
 							</div>
 							
