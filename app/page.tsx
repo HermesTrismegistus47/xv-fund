@@ -17,6 +17,9 @@ type Investment = {
 	nextUnlock: string;
 	nextUnlock2: string;
 	fullUnlock: string;
+	buyPrice: string;
+	currentPrice: string;
+	vesting: string;
 };
 
 type Overview = {
@@ -137,6 +140,7 @@ type Portfolio = {
 	};
 	vestingChart?: VestingData[];
 	blockchainCategories?: BlockchainCategory[];
+	individualVestingData?: { [key: string]: VestingData[] };
 };
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
@@ -222,6 +226,23 @@ function formatTokensReceived(value: string | undefined | null): string {
 	// NO TRUNCATION: Just remove decimal places and format with commas
 	const withoutCents = Math.floor(number);
 	return '$' + withoutCents.toLocaleString();
+}
+
+// Helper function to format prices with thousands decimals (e.g., 1.034)
+function formatPrice(value: string | undefined | null): string {
+	if (!value || value === '-') return '-';
+	
+	// Remove $ sign and all non-numeric characters except decimal points
+	let cleanValue = value.replace(/^\$/, '').replace(/[,\s]/g, '');
+	
+	// Parse as number
+	const number = parseFloat(cleanValue);
+	
+	// If it's not a valid number, return original value
+	if (isNaN(number)) return value;
+	
+	// Format with 3 decimal places to show thousands (e.g., 1.034)
+	return '$' + number.toFixed(3);
 }
 
 // Helper function to format unlock amounts (same as regular currency now)
@@ -375,7 +396,7 @@ function VestingChart({ data }: { data: VestingData[] }) {
 				const value = monthData[project as keyof VestingData] as number || 0;
 				if (value > 50000) {
 					// Cap suspiciously high values for first month
-					processed[project as keyof VestingData] = Math.min(value * 0.02, 15000) as any;
+					(processed as any)[project] = Math.min(value * 0.02, 15000);
 				}
 			});
 			return processed;
@@ -589,7 +610,6 @@ function VestingChart({ data }: { data: VestingData[] }) {
 									position: 'absolute',
 									bottom: '-6px',
 									left: '50%',
-									transform: 'translateX(-50%)',
 									width: '12px',
 									height: '12px',
 									backgroundColor: '#1f2937',
@@ -709,7 +729,7 @@ function BlockchainCategoryDonutChart({ data }: { data: BlockchainCategory[] }) 
 	let currentAngle = -90; // Start from top
 
 	return (
-		<div style={{ 
+		<div style={{
 			backgroundColor: '#ffffff',
 			border: '1px solid #f1f5f9',
 			borderRadius: '16px',
@@ -730,7 +750,7 @@ function BlockchainCategoryDonutChart({ data }: { data: BlockchainCategory[] }) 
 					margin: '0 0 4px 0',
 					letterSpacing: '-0.025em'
 				}}>
-					Portfolio Allocation by Blockchain Category
+					Category Breakdown
 				</h3>
 				<p style={{ 
 					fontSize: '12px', 
@@ -738,14 +758,17 @@ function BlockchainCategoryDonutChart({ data }: { data: BlockchainCategory[] }) 
 					margin: 0,
 					fontWeight: 400
 				}}>
-					Total invested across blockchain categories
+					Portfolio allocation across blockchain categories
 				</p>
 			</div>
 			
-			{/* Chart Container - Improved layout */}
-			<div style={{ padding: '32px', display: 'flex', gap: '40px', alignItems: 'center' }}>
-				{/* Donut Chart - Bigger size */}
-				<div style={{ position: 'relative', flexShrink: 0 }}>
+			{/* Chart Container */}
+			<div style={{ padding: '32px' }}>
+				
+				{/* Chart and Legend Section */}
+				<div style={{ display: 'flex', gap: '40px', alignItems: 'center' }}>
+					{/* Donut Chart - Bigger size */}
+					<div style={{ position: 'relative', flexShrink: 0 }}>
 					<svg width="360" height="360" style={{ overflow: 'visible' }}>
 						{segments.map((segment, index) => {
 							const angle = (segment.percentage / 100) * 360;
@@ -929,17 +952,6 @@ function BlockchainCategoryDonutChart({ data }: { data: BlockchainCategory[] }) 
 					flex: 1,
 					minWidth: '400px'
 				}}>
-					<div style={{
-						fontSize: '14px',
-						fontWeight: 600,
-						color: '#374151',
-						marginBottom: '16px',
-						textTransform: 'uppercase',
-						letterSpacing: '0.05em',
-						textAlign: 'center'
-					}}>
-						Category Breakdown
-					</div>
 					
 					{/* Two column grid */}
 					<div style={{
@@ -956,13 +968,17 @@ function BlockchainCategoryDonutChart({ data }: { data: BlockchainCategory[] }) 
 								cursor: 'pointer',
 								transition: 'all 0.15s ease'
 							}}
-							onMouseEnter={() => setHoveredSegment({
-								category: segment.category,
-								investments: segment.investments,
-								value: segment.value,
-								percentage: segment.percentage,
-								x: 0, y: 0
-							})}
+							onMouseEnter={(e) => {
+								const rect = e.currentTarget.getBoundingClientRect();
+								setHoveredSegment({
+									category: segment.category,
+									investments: segment.investments,
+									value: segment.value,
+									percentage: segment.percentage,
+									x: rect.left + rect.width / 2,
+									y: rect.top + rect.height / 2
+								});
+							}}
 							onMouseLeave={() => setHoveredSegment(null)}>
 								{/* Color indicator */}
 								<div style={{ 
@@ -1006,6 +1022,7 @@ function BlockchainCategoryDonutChart({ data }: { data: BlockchainCategory[] }) 
 						))}
 					</div>
 				</div>
+				</div>
 			</div>
 		</div>
 	);
@@ -1013,7 +1030,16 @@ function BlockchainCategoryDonutChart({ data }: { data: BlockchainCategory[] }) 
 
 // Blockchain Category Performance Bar Chart Component
 function BlockchainCategoryBarChart({ data }: { data: BlockchainCategory[] }) {
-	const [hoveredBar, setHoveredBar] = React.useState<string | null>(null);
+	const [hoveredSegment, setHoveredSegment] = React.useState<{
+		category: string;
+		investments: string[];
+		value: number;
+		percentage: number;
+		realisedValue: string;
+		unrealisedValue: string;
+		x: number;
+		y: number;
+	} | null>(null);
 
 	if (!data || data.length === 0) {
 		return (
@@ -1041,6 +1067,11 @@ function BlockchainCategoryBarChart({ data }: { data: BlockchainCategory[] }) {
 			</div>
 		);
 	}
+
+	// Calculate total invested for percentage calculations
+	const totalPortfolioInvested = data.reduce((sum, category) => 
+		sum + parseFloat(category.totalInvested.replace(/[$,]/g, '') || '0'), 0
+	);
 
 	// Process data for chart with better parsing
 	const chartData = data.map(category => {
@@ -1070,11 +1101,20 @@ function BlockchainCategoryBarChart({ data }: { data: BlockchainCategory[] }) {
 			}
 		}
 		
+		const totalInvestedNum = parseFloat(category.totalInvested.replace(/[$,]/g, '') || '0');
+		const totalInvestedPercentage = totalPortfolioInvested > 0 ? 
+			(totalInvestedNum / totalPortfolioInvested) * 100 : 0;
+		
 		return {
 			category: category.category,
 			realisedRoi: isNaN(realisedRoi) ? 0 : realisedRoi,
 			unrealisedRoi: isNaN(unrealisedRoi) ? 0 : unrealisedRoi,
-			totalInvested: parseFloat(category.totalInvested.replace(/[$,]/g, '') || '0'),
+			totalInvested: totalInvestedNum,
+			totalInvestedFormatted: category.totalInvested,
+			totalInvestedPercentage: totalInvestedPercentage,
+			realisedValue: category.realisedValue,
+			unrealisedValue: category.unrealisedValue,
+			investments: category.investments || [],
 			// Store original values for debugging
 			originalRealisedRoi: category.realisedRoi,
 			originalUnrealisedRoi: category.unrealisedRoi
@@ -1094,7 +1134,7 @@ function BlockchainCategoryBarChart({ data }: { data: BlockchainCategory[] }) {
 	const maxRoi = Math.max(...chartData.flatMap(item => [item.realisedRoi, item.unrealisedRoi]), 1);
 	
 	// Create regular Y-axis intervals
-	const getYAxisIntervals = (max) => {
+	const getYAxisIntervals = (max: number) => {
 		if (max <= 1) return [0, 0.2, 0.4, 0.6, 0.8, 1.0];
 		if (max <= 2) return [0, 0.4, 0.8, 1.2, 1.6, 2.0];
 		if (max <= 3) return [0, 0.6, 1.2, 1.8, 2.4, 3.0];
@@ -1214,7 +1254,7 @@ function BlockchainCategoryBarChart({ data }: { data: BlockchainCategory[] }) {
 						{chartData.map((item, index) => {
 							const realisedHeight = (item.realisedRoi / chartMaxRoi) * 300;
 							const unrealisedHeight = (item.unrealisedRoi / chartMaxRoi) * 300;
-							const isHovered = hoveredBar === item.category;
+							const isHovered = hoveredSegment?.category === item.category;
 							const barWidth = 60;
 							
 							return (
@@ -1225,10 +1265,26 @@ function BlockchainCategoryBarChart({ data }: { data: BlockchainCategory[] }) {
 										flexDirection: 'column',
 										alignItems: 'center',
 										minWidth: `${barWidth + 20}px`,
-										cursor: 'pointer'
+										cursor: 'pointer',
+										backgroundColor: isHovered ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+										borderRadius: '8px',
+										padding: '4px',
+										transition: 'background-color 0.2s ease'
 									}}
-									onMouseEnter={() => setHoveredBar(item.category)}
-									onMouseLeave={() => setHoveredBar(null)}
+									onMouseEnter={(e) => {
+										const rect = e.currentTarget.getBoundingClientRect();
+										setHoveredSegment({
+											category: item.category,
+											investments: item.investments,
+											value: item.totalInvested,
+											percentage: item.totalInvestedPercentage,
+											realisedValue: item.realisedValue,
+											unrealisedValue: item.unrealisedValue,
+											x: rect.left + rect.width / 2,
+											y: rect.top + rect.height / 2
+										});
+									}}
+									onMouseLeave={() => setHoveredSegment(null)}
 								>
 									{/* Bar Container */}
 									<div style={{
@@ -1308,27 +1364,6 @@ function BlockchainCategoryBarChart({ data }: { data: BlockchainCategory[] }) {
 											)}
 										</div>
 
-										{/* Enhanced Hover Effect */}
-										{isHovered && (
-											<div style={{
-												position: 'absolute',
-												top: '-45px',
-												left: '50%',
-												transform: 'translateX(-50%)',
-												fontSize: '11px',
-												fontWeight: 600,
-												color: '#111827',
-												backgroundColor: '#ffffff',
-												padding: '6px 10px',
-												borderRadius: '8px',
-												border: '2px solid #e5e7eb',
-												whiteSpace: 'nowrap',
-												zIndex: 10,
-												boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)'
-											}}>
-												Total: {(item.realisedRoi + item.unrealisedRoi).toFixed(2)}x
-											</div>
-										)}
 									</div>
 
 									{/* Enhanced Category Label */}
@@ -1352,6 +1387,111 @@ function BlockchainCategoryBarChart({ data }: { data: BlockchainCategory[] }) {
 						})}
 					</div>
 				</div>
+				
+				{/* Enhanced Hover Tooltip - Matching Donut Chart Style */}
+				{hoveredSegment && (
+					<div style={{
+						position: 'fixed',
+						left: hoveredSegment.x - 160,
+						top: hoveredSegment.y - 120,
+						backgroundColor: '#1f2937',
+						color: '#ffffff',
+						padding: '20px',
+						borderRadius: '12px',
+						fontSize: '13px',
+						fontWeight: 500,
+						pointerEvents: 'none',
+						zIndex: 1000,
+						minWidth: '320px',
+						maxWidth: '400px',
+						boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1)',
+						backdropFilter: 'blur(8px)'
+					}}>
+						<div style={{ 
+							fontWeight: 800, 
+							marginBottom: '12px',
+							fontSize: '18px',
+							color: '#f9fafb',
+							display: 'flex',
+							alignItems: 'center',
+							gap: '8px'
+						}}>
+							<div style={{
+								width: '12px',
+								height: '12px',
+								background: 'linear-gradient(45deg, #34d399, #3b82f6)',
+								borderRadius: '3px'
+							}} />
+							{hoveredSegment.category}
+						</div>
+						<div style={{
+							fontSize: '14px',
+							color: '#d1d5db',
+							marginBottom: '12px',
+							fontFamily: '"SF Mono", "Monaco", monospace',
+							padding: '8px 12px',
+							backgroundColor: 'rgba(255, 255, 255, 0.1)',
+							borderRadius: '6px'
+						}}>
+							${hoveredSegment.value.toLocaleString()} ({hoveredSegment.percentage.toFixed(1)}%)
+						</div>
+						<div style={{
+							fontSize: '13px',
+							color: '#d1d5db',
+							marginBottom: '6px',
+							display: 'flex',
+							justifyContent: 'space-between',
+							alignItems: 'center'
+						}}>
+							<span style={{ fontWeight: 600 }}>Realised Value:</span>
+							<span style={{ 
+								color: '#34d399',
+								fontFamily: '"SF Mono", "Monaco", monospace',
+								fontWeight: 700
+							}}>
+								{hoveredSegment.realisedValue}
+							</span>
+						</div>
+						<div style={{
+							fontSize: '13px',
+							color: '#d1d5db',
+							marginBottom: '12px',
+							display: 'flex',
+							justifyContent: 'space-between',
+							alignItems: 'center'
+						}}>
+							<span style={{ fontWeight: 600 }}>Unrealised Value:</span>
+							<span style={{ 
+								color: '#60a5fa',
+								fontFamily: '"SF Mono", "Monaco", monospace',
+								fontWeight: 700
+							}}>
+								{hoveredSegment.unrealisedValue}
+							</span>
+						</div>
+						<div style={{
+							fontSize: '12px',
+							color: '#d1d5db',
+							fontWeight: 600,
+							marginBottom: '8px'
+						}}>
+							Investments ({hoveredSegment.investments.length}):
+						</div>
+						<div style={{
+							fontSize: '11px',
+							color: '#e5e7eb',
+							lineHeight: '1.5',
+							maxHeight: '140px',
+							overflowY: 'auto',
+							padding: '8px',
+							backgroundColor: 'rgba(0, 0, 0, 0.2)',
+							borderRadius: '6px',
+							border: '1px solid rgba(255, 255, 255, 0.1)'
+						}}>
+							{hoveredSegment.investments.join(' • ')}
+						</div>
+					</div>
+				)}
 				
 				{/* Enhanced Legend */}
 				<div style={{ 
@@ -1476,7 +1616,7 @@ function Stat({ label, value, trend, subtitle, customColor }: {
 type ColKey =
 	| 'name' | 'totalInvested' | 'totalValue' | 'realisedValue' | 'realisedPnL' | 'roi'
 	| 'realisedRoi' | 'percentReceived' | 'percentSold' | 'liquidValue'
-	| 'nextUnlock' | 'nextUnlock2' | 'fullUnlock';
+	| 'nextUnlock' | 'nextUnlock2' | 'fullUnlock' | 'buyPrice' | 'currentPrice' | 'vesting';
 
 const COLUMNS: { key: ColKey; label: string; numeric?: boolean }[] = [
 	{ key: 'name', label: 'Name' },
@@ -1492,6 +1632,9 @@ const COLUMNS: { key: ColKey; label: string; numeric?: boolean }[] = [
 	{ key: 'nextUnlock', label: 'Next Unlock' },
 	{ key: 'nextUnlock2', label: 'Next Unlock' },
 	{ key: 'fullUnlock', label: 'Full Unlock' },
+	{ key: 'buyPrice', label: 'Buy Price', numeric: true },
+	{ key: 'currentPrice', label: 'Current Price', numeric: true },
+	{ key: 'vesting', label: 'Vesting' },
 ];
 
 function parseNumberLike(v: string | undefined) {
@@ -1521,12 +1664,14 @@ function IndividualPortfolioDashboard({
 	portfolio, 
 	onHeaderClick, 
 	sortKey, 
-	sortDir 
+	sortDir,
+	individualVestingData
 }: { 
 	portfolio: IndividualPortfolio;
-	onHeaderClick: (k: string) => void;
+	onHeaderClick: (k: ColKey) => void;
 	sortKey: string;
 	sortDir: 'desc' | 'asc';
+	individualVestingData?: VestingData[];
 }) {
 	// Column definitions for individual portfolio table
 	const INDIVIDUAL_COLUMNS = [
@@ -1572,117 +1717,142 @@ function IndividualPortfolioDashboard({
 				}}>
 					Portfolio Performance
 				</h2>
-				<div style={{ 
-					display: 'grid', 
-					gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
-					gap: '16px'
-				}}>
-					<Stat 
-						label="Total Invested" 
-							value={formatTokensReceived(portfolio.summary.totalInvested)}
-						trend="neutral"
-						subtitle="Capital deployed"
-					/>
-					<Stat 
-						label="Total Value" 
-							value={formatTokensReceived(portfolio.summary.totalValue)}
-						trend="neutral"
-						subtitle="Current market value"
-					/>
-					<Stat 
-						label="Realised Value" 
-							value={formatTokensReceived(portfolio.summary.realisedValue)}
-						trend={portfolio.summary.realisedRoi && parseFloat(portfolio.summary.realisedRoi.replace('x', '')) > 0 ? "positive" : "negative"}
-						subtitle="Cash returned"
-					/>
-					<Stat 
-						label="Realised P&L" 
-							value={formatTokensReceived(portfolio.summary.realisedPnL)}
-						trend={portfolio.summary.realisedPnL && !portfolio.summary.realisedPnL.includes('-') ? "positive" : "negative"}
-						subtitle="Profit/Loss on exits"
-					/>
-					<Stat 
-						label="Total ROI" 
-						value={formatROI(portfolio.summary.roi)} 
-						trend={portfolio.summary.roi && parseFloat(portfolio.summary.roi.replace('x', '')) >= 1 ? "positive" : "negative"}
-						subtitle="Overall return multiple"
-					/>
-					<Stat 
-						label="Realised ROI" 
-						value={formatROI(portfolio.summary.realisedRoi)} 
-						trend={portfolio.summary.realisedRoi && parseFloat(portfolio.summary.realisedRoi.replace('x', '')) >= 1 ? "positive" : "negative"}
-						subtitle="Return on realised investments"
-					/>
-				</div>
+				{portfolio.summary ? (
+					<div style={{ 
+						display: 'grid', 
+						gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+						gap: '16px'
+					}}>
+						<Stat 
+							label="Total Invested" 
+								value={formatTokensReceived(portfolio.summary.totalInvested)}
+							trend="neutral"
+							subtitle="Capital deployed"
+						/>
+						<Stat 
+							label="Realised Value" 
+								value={formatTokensReceived(portfolio.summary.realisedValue)}
+							trend="neutral"
+							subtitle="Cash returned"
+						/>
+						<Stat 
+							label="Unrealised Value" 
+								value={formatTokensReceived(portfolio.summary.totalValue)}
+							trend="neutral"
+							subtitle="Current market value"
+						/>
+						<Stat 
+							label="Realised P&L" 
+								value={formatTokensReceived(portfolio.summary.realisedPnL)}
+							trend={portfolio.summary.realisedPnL && !portfolio.summary.realisedPnL.includes('-') ? "positive" : "negative"}
+							subtitle="Profit/Loss on exits"
+						/>
+						<Stat 
+							label="Unrealised ROI" 
+							value={formatROI(portfolio.summary.roi)} 
+							trend={portfolio.summary.roi && parseFloat(portfolio.summary.roi.replace('x', '')) >= 1 ? "positive" : "negative"}
+							subtitle="Overall return multiple"
+						/>
+						<Stat 
+							label="Realised ROI" 
+							value={formatROI(portfolio.summary.realisedRoi)} 
+							trend={portfolio.summary.realisedRoi && parseFloat(portfolio.summary.realisedRoi.replace('x', '')) >= 1 ? "positive" : "negative"}
+							subtitle="Return on realised investments"
+						/>
+					</div>
+				) : (
+					<div style={{
+						padding: '24px',
+						backgroundColor: '#f8f9fa',
+						borderRadius: '8px',
+						border: '1px solid #e9ecef',
+						textAlign: 'center'
+					}}>
+						<p style={{
+							color: '#6c757d',
+							fontSize: '14px',
+							margin: 0
+						}}>
+							Summary data not available for this portfolio. Individual investment details are shown below.
+						</p>
+					</div>
+				)}
 			</div>
 
 			{/* Liquid Value Showcase */}
-			<div style={{ 
-				backgroundColor: '#ffffff',
-				border: '1px solid #e1e5e9',
-				borderRadius: '8px',
-				padding: '32px',
-				marginBottom: '40px',
-				boxShadow: '0 2px 4px rgba(0, 0, 0, 0.06)'
-			}}>
-				<h3 style={{ 
-					fontSize: '18px', 
-					fontWeight: 600, 
-					color: '#1a1d29',
-					margin: '0 0 24px 0',
-					letterSpacing: '-0.01em'
+			{portfolio.summary && (
+				<div style={{ 
+					backgroundColor: '#ffffff',
+					border: '1px solid #e1e5e9',
+					borderRadius: '8px',
+					padding: '32px',
+					marginBottom: '40px',
+					boxShadow: '0 2px 4px rgba(0, 0, 0, 0.06)'
 				}}>
-					Liquid Positions Overview
-				</h3>
-				
-				<div style={{ display: 'flex', alignItems: 'flex-start', gap: '40px', flexWrap: 'wrap' }}>
-					{/* Total Liquid Value */}
-					<div style={{ flex: '0 0 auto' }}>
-						<div style={{ 
-							fontSize: '12px', 
-							fontWeight: 500, 
-							color: '#6c7281', 
-							letterSpacing: '0.02em',
-							textTransform: 'uppercase',
-							marginBottom: '8px'
-						}}>
-							Total Liquid Value
-						</div>
-						<div style={{ 
-							fontSize: '36px', 
-							fontWeight: 700, 
-							color: '#1a1d29',
-							lineHeight: 1,
-							fontFamily: '"SF Mono", "Monaco", "Inconsolata", "Roboto Mono", monospace'
-						}}>
-							{formatTokensReceived(portfolio.summary.liquidValue)}
-						</div>
-					</div>
+					<h3 style={{ 
+						fontSize: '18px', 
+						fontWeight: 600, 
+						color: '#1a1d29',
+						margin: '0 0 24px 0',
+						letterSpacing: '-0.01em'
+					}}>
+						Liquid Positions Overview
+					</h3>
 					
-					{/* Top 3 Liquid Positions */}
-					<div style={{ flex: '1 1 400px', minWidth: '300px' }}>
-						<div style={{ 
-							fontSize: '12px', 
-							fontWeight: 500, 
-							color: '#6c7281', 
-							letterSpacing: '0.02em',
-							textTransform: 'uppercase',
-							marginBottom: '12px'
-						}}>
-							Top Liquid Positions
+					<div style={{ display: 'flex', alignItems: 'flex-start', gap: '40px', flexWrap: 'wrap' }}>
+						{/* Total Liquid Value */}
+						<div style={{ flex: '0 0 auto' }}>
+							<div style={{ 
+								fontSize: '12px', 
+								fontWeight: 500, 
+								color: '#6c7281', 
+								letterSpacing: '0.02em',
+								textTransform: 'uppercase',
+								marginBottom: '8px'
+							}}>
+								Total Liquid Value
+							</div>
+							<div style={{ 
+								fontSize: '36px', 
+								fontWeight: 700, 
+								color: '#1a1d29',
+								lineHeight: 1,
+								fontFamily: '"SF Mono", "Monaco", "Inconsolata", "Roboto Mono", monospace'
+							}}>
+								{formatTokensReceived(portfolio.summary.liquidValue)}
+							</div>
 						</div>
-						<div style={{ 
-							fontSize: '14px', 
-							color: '#374151',
-							lineHeight: '1.6',
-							fontWeight: 500,
-							letterSpacing: '0.01em'
-						}}>
-							{getTopIndividualLiquidPositions(portfolio.investments)}
+						
+						{/* Top 3 Liquid Positions */}
+						<div style={{ flex: '1 1 400px', minWidth: '300px' }}>
+							<div style={{ 
+								fontSize: '12px', 
+								fontWeight: 500, 
+								color: '#6c7281', 
+								letterSpacing: '0.02em',
+								textTransform: 'uppercase',
+								marginBottom: '12px'
+							}}>
+								Top Liquid Positions
+							</div>
+							<div style={{ 
+								fontSize: '14px', 
+								color: '#374151',
+								lineHeight: '1.6',
+								fontWeight: 500,
+								letterSpacing: '0.01em'
+							}}>
+								{getTopIndividualLiquidPositions(portfolio.investments)}
+							</div>
 						</div>
 					</div>
 				</div>
-			</div>
+			)}
+
+			{/* Individual Vesting Chart */}
+			{individualVestingData && individualVestingData.length > 0 && (
+				<VestingChart data={individualVestingData} />
+			)}
 
 			{/* Individual Portfolio Table */}
 			<div style={{ 
@@ -1732,7 +1902,7 @@ function IndividualPortfolioDashboard({
 									return (
 										<th
 											key={col.key}
-											onClick={() => onHeaderClick(col.key)}
+											onClick={() => onHeaderClick(col.key as ColKey)}
 											style={{
 												textAlign: col.numeric ? 'right' : 'left',
 												padding: '12px 16px',
@@ -1887,6 +2057,15 @@ function IndividualPortfolioDashboard({
 
 export default function HomePage() {
 	const { data, isLoading, error } = useSWR<Portfolio>('/api/portfolio', fetcher, { refreshInterval: 60_000 });
+
+	// Debug: Log individual portfolios data
+	if (data?.individualPortfolios) {
+		console.log('Frontend received individual portfolios:', Object.keys(data.individualPortfolios));
+		Object.keys(data.individualPortfolios).forEach(key => {
+			const portfolio = (data.individualPortfolios as any)[key];
+			console.log(`${key}: ${portfolio?.name}, ${portfolio?.investments?.length || 0} investments, summary: ${portfolio?.summary ? 'yes' : 'no'}`);
+		});
+	}
 
 	const [sortKey, setSortKey] = useState<ColKey>('totalValue');
 	const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
@@ -2486,7 +2665,7 @@ export default function HomePage() {
 									return (
 										<th
 											key={col.key}
-											onClick={() => onHeaderClick(col.key)}
+											onClick={() => onHeaderClick(col.key as ColKey)}
 											style={{
 												textAlign: col.numeric ? 'right' : 'left',
 												padding: '12px 16px',
@@ -2500,7 +2679,9 @@ export default function HomePage() {
 												background: active ? '#f0f4ff' : 'transparent',
 												borderBottom: active ? '2px solid #2563eb' : '2px solid transparent',
 												transition: 'all 0.15s ease',
-												position: 'relative'
+												position: 'relative',
+												minWidth: col.key === 'vesting' ? '200px' : 'auto',
+												width: col.key === 'vesting' ? '200px' : 'auto'
 											}}
 											onMouseEnter={(e) => {
 												if (!active) {
@@ -2531,6 +2712,16 @@ export default function HomePage() {
 						</thead>
 						<tbody>
 								{sorted.map((i, index) => {
+									// Debug: Log first investment to check new columns
+									if (index === 0) {
+										console.log('Investment data:', { 
+											name: i.name, 
+											buyPrice: i.buyPrice, 
+											currentPrice: i.currentPrice, 
+											vesting: i.vesting 
+										});
+									}
+									
 									const isEven = index % 2 === 0;
 									const rowBg = isEven ? '#ffffff' : '#fafbfc';
 									
@@ -2551,7 +2742,7 @@ export default function HomePage() {
 									>
 											<td style={{ 
 												padding: '12px 16px', 
-												fontWeight: 500,
+												fontWeight: 400,
 												borderRight: '1px solid #f1f3f4'
 											}}>
 												<a 
@@ -2559,7 +2750,7 @@ export default function HomePage() {
 													style={{ 
 														color: '#2563eb', 
 														textDecoration: 'none',
-														fontWeight: 500,
+														fontWeight: 400,
 														fontSize: '13px',
 														transition: 'color 0.15s ease'
 													}}
@@ -2580,6 +2771,12 @@ export default function HomePage() {
 												formattedValue = formatUnlockColumn(value, 'currency');
 											} else if (col.key === 'fullUnlock') {
 												formattedValue = formatUnlockColumn(value, 'days-full');
+											} else if (col.key === 'buyPrice' || col.key === 'currentPrice') {
+												// Format price columns with thousands decimals
+												formattedValue = formatPrice(value);
+											} else if (col.key === 'vesting') {
+												// Vesting column - keep as is (could be text or percentage)
+												formattedValue = value || '-';
 											} else {
 												formattedValue = formatCell(value) || '-';
 											}
@@ -2612,11 +2809,15 @@ export default function HomePage() {
 													style={{ 
 														padding: '12px 16px',
 														textAlign: col.numeric ? 'right' : 'left',
-														fontWeight: (col.numeric || isUnlockColumn) ? 500 : 400,
+														fontWeight: 400,
 														color: cellColor,
 														borderRight: colIndex < COLUMNS.length - 2 ? '1px solid #f1f3f4' : 'none',
 														fontFamily: col.numeric ? '"SF Mono", "Monaco", monospace' : 'inherit',
-														fontSize: '13px'
+														fontSize: '13px',
+														minWidth: col.key === 'vesting' ? '200px' : 'auto',
+														width: col.key === 'vesting' ? '200px' : 'auto',
+														maxWidth: col.key === 'vesting' ? '200px' : 'none',
+														wordWrap: col.key === 'vesting' ? 'break-word' : 'normal'
 													}}
 												>
 													{formattedValue}
@@ -2656,6 +2857,7 @@ export default function HomePage() {
 								onHeaderClick={onHeaderClick}
 								sortKey={sortKey}
 								sortDir={sortDir}
+								individualVestingData={data?.individualVestingData?.[selectedPortfolio]}
 							/>
 						)}
 					</>

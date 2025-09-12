@@ -24,34 +24,42 @@ function doGet(e) {
     
     // ===== EXISTING FUND DATA (keeping all existing code) =====
     
-    // Get main investment data from A14:N70
-    const values = sheet.getRange('A14:N70').getValues();
+    // Get main investment data from B15:Q71 (updated range with new columns)
+    const values = sheet.getRange('B15:Q71').getValues();
     const investments = [];
     
-    // Skip row 14 (empty) and row 15 (headers), start from row 16 (index 2)
-    for (let i = 2; i < values.length; i++) {
+    // Skip row 15 (headers), start from row 16 (index 1)
+    for (let i = 1; i < values.length; i++) {
       const row = values[i];
-      const name = row[1] ? row[1].toString().trim() : '';
+      const name = row[0] ? row[0].toString().trim() : ''; // Column B (index 0)
       
       if (!name || name === 'Fundamental Global Inc' || name === 'NewOS' || 
-          name.includes('$3,619,094') || row[1] === '') {
+          name.includes('$3,619,094') || row[0] === '') {
         break;
+      }
+      
+      // Debug: Log the row data for the first few investments
+      if (i <= 3) {
+        console.log(`Row ${i + 15}: Name=${name}, BuyPrice=${row[13]}, CurrentPrice=${row[14]}, Vesting=${row[15]}`);
       }
       
       investments.push({
         name: name,
-        totalInvested: row[2] ? row[2].toString() : '',
-        totalValue: row[3] ? row[3].toString() : '',
-        realisedValue: row[4] ? row[4].toString() : '',
-        realisedPnL: row[5] ? row[5].toString() : '',
-        roi: row[6] ? row[6].toString() : '',
-        realisedRoi: row[7] ? row[7].toString() : '',
-        percentReceived: row[8] ? row[8].toString() : '',
-        percentSold: row[9] ? row[9].toString() : '',
-        liquidValue: row[10] ? row[10].toString() : '',
-        nextUnlock: row[11] ? row[11].toString() : '',
-        nextUnlock2: row[12] ? row[12].toString() : '',
-        fullUnlock: row[13] ? row[13].toString() : ''
+        totalInvested: row[1] ? row[1].toString() : '',        // Column C
+        totalValue: row[2] ? row[2].toString() : '',           // Column D
+        realisedValue: row[3] ? row[3].toString() : '',        // Column E
+        realisedPnL: row[4] ? row[4].toString() : '',          // Column F
+        roi: row[5] ? row[5].toString() : '',                  // Column G
+        realisedRoi: row[6] ? row[6].toString() : '',          // Column H
+        percentReceived: row[7] ? row[7].toString() : '',      // Column I
+        percentSold: row[8] ? row[8].toString() : '',          // Column J
+        liquidValue: row[9] ? row[9].toString() : '',          // Column K
+        nextUnlock: row[10] ? row[10].toString() : '',         // Column L
+        nextUnlock2: row[11] ? row[11].toString() : '',        // Column M
+        fullUnlock: row[12] ? row[12].toString() : '',         // Column N
+        buyPrice: row[13] ? row[13].toString() : '',           // Column O (new)
+        currentPrice: row[14] ? row[14].toString() : '',       // Column P (new)
+        vesting: row[15] ? row[15].toString() : ''             // Column Q (new)
       });
     }
     
@@ -257,10 +265,15 @@ function doGet(e) {
     // ===== VESTING CHART DATA WITH MONTHLY DELTAS =====
     
     let vestingData = [];
+    let individualVestingData = {};
     
     try {
       // Get vesting data from A50:S105 (56 rows total)
       const vestingValues = vestingSheet.getRange('A50:S105').getValues();
+      
+      // Also get individual portfolio vesting data
+      // Scan for individual portfolio sections starting around row 110
+      const individualVestingValues = vestingSheet.getRange('A110:T200').getValues();
       
       // Top performer columns mapping (your specified projects)
       const topPerformers = {
@@ -398,10 +411,129 @@ function doGet(e) {
           return total > 0;
         });
         
+      // ===== PROCESS INDIVIDUAL PORTFOLIO VESTING DATA =====
+      
+      // Process individual portfolio vesting data
+      let currentPortfolioManager = null;
+      let currentDateRowIndex = -1;
+      
+      console.log('Processing individual vesting data, scanning', individualVestingValues.length, 'rows');
+      
+      for (let i = 0; i < individualVestingValues.length; i++) {
+        const row = individualVestingValues[i];
+        const cellA = row[0] ? row[0].toString().trim() : '';
+        
+        // Check if this is a portfolio manager name (single name in column A)
+        if (cellA && !cellA.includes('/') && !cellA.includes('Date') && !cellA.includes('Share') && 
+            ['Zohair', 'Matthias', 'Iaad', 'Babak', 'Mikado'].includes(cellA)) {
+          currentPortfolioManager = cellA.toLowerCase();
+          
+          // Handle name mappings (Mikado -> Iaad)
+          if (currentPortfolioManager === 'mikado') {
+            currentPortfolioManager = 'iaad';
+          }
+          
+          individualVestingData[currentPortfolioManager] = [];
+          currentDateRowIndex = -1;
+          console.log('Found portfolio manager:', currentPortfolioManager, 'at row', i + 110);
+        }
+        
+        // Check if this is a date row (starts with date pattern like "1/9/23")
+        else if (cellA && cellA.includes('/') && currentPortfolioManager) {
+          if (currentDateRowIndex === -1) {
+            // This is the first date row, find the header to get column mapping
+            currentDateRowIndex = i;
+            console.log('First date row for', currentPortfolioManager, ':', cellA);
+          }
+          
+          // Parse the date
+          let rowDate;
+          try {
+            const dateStr = cellA.toString();
+            const parts = dateStr.split('/');
+            if (parts.length === 3) {
+              let month = parseInt(parts[0]);
+              let day = parseInt(parts[1]);
+              let year = parseInt(parts[2]);
+              if (year < 100) year += 2000;
+              rowDate = new Date(year, month - 1, day);
+            }
+          } catch (e) {
+            continue;
+          }
+          
+          // Only include future dates
+          if (rowDate && rowDate >= today) {
+            const monthKey = rowDate.getFullYear() + '-' + String(rowDate.getMonth() + 1).padStart(2, '0');
+            
+            // Extract vesting amounts for each project (columns B through S)
+            const monthData = { month: monthKey };
+            Object.keys(topPerformers).forEach(projectName => {
+              const colIndex = topPerformers[projectName];
+              const value = row[colIndex];
+              let numValue = 0;
+              if (value !== null && value !== undefined && value !== '') {
+                if (typeof value === 'number') {
+                  numValue = value;
+                } else {
+                  const cleanValue = value.toString().replace(/[$,\s]/g, '');
+                  numValue = parseFloat(cleanValue) || 0;
+                }
+              }
+              monthData[projectName] = numValue;
+            });
+            
+            individualVestingData[currentPortfolioManager].push(monthData);
+          }
+        }
+      }
+      
+      // Convert cumulative to monthly deltas for each portfolio manager
+      Object.keys(individualVestingData).forEach(manager => {
+        const data = individualVestingData[manager];
+        const previousValues = {};
+        
+        // Initialize previous values
+        Object.keys(topPerformers).forEach(project => {
+          previousValues[project] = 0;
+        });
+        
+        // Convert to monthly deltas
+        individualVestingData[manager] = data.map(monthData => {
+          const deltaData = { month: monthData.month };
+          
+          Object.keys(topPerformers).forEach(project => {
+            const currentCumulative = monthData[project] || 0;
+            const previousCumulative = previousValues[project] || 0;
+            const monthlyAmount = Math.max(0, currentCumulative - previousCumulative);
+            deltaData[project] = monthlyAmount;
+            
+            if (currentCumulative > 0) {
+              previousValues[project] = currentCumulative;
+            }
+          });
+          
+          return deltaData;
+        }).filter(monthData => {
+          // Only include months with actual vesting
+          const total = Object.keys(topPerformers).reduce((sum, project) => 
+            sum + (monthData[project] || 0), 0
+          );
+          return total > 0;
+        });
+      });
+      
+      // Debug: Log final individual vesting data
+      console.log('Final individual vesting data:', Object.keys(individualVestingData));
+      Object.keys(individualVestingData).forEach(manager => {
+        console.log(`${manager}: ${individualVestingData[manager].length} months`);
+      });
+        
     } catch (vestingError) {
       // If vesting processing fails, continue with empty array but log error
       console.error('Vesting processing error:', vestingError);
       vestingData = [];
+      individualVestingData = {};
     }
     
     // ===== EXISTING CODE FOR OTHER DATA (keeping all existing) =====
@@ -517,7 +649,14 @@ function doGet(e) {
           }
           
           // Start new portfolio
-          const portfolioKey = cellB.toLowerCase().replace(/\s+/g, '');
+          let portfolioKey = cellB.toLowerCase().replace(/\s+/g, '');
+          
+          // Handle name mappings (Mikado -> Iaad)
+          if (portfolioKey === 'mikado') {
+            portfolioKey = 'iaad';
+          }
+          
+          console.log('Found individual portfolio:', cellB, '-> key:', portfolioKey, 'at row', startRow + i);
           currentPortfolio = {
             key: portfolioKey,
             name: cellB,
@@ -575,6 +714,13 @@ function doGet(e) {
         };
       }
       
+      // Debug: Log all found portfolios
+      console.log('Individual portfolios detected:', Object.keys(portfolios));
+      Object.keys(portfolios).forEach(key => {
+        const portfolio = portfolios[key];
+        console.log(`${key}: ${portfolio.name}, ${portfolio.investments.length} investments, summary: ${portfolio.summary ? 'yes' : 'no'}`);
+      });
+      
       return portfolios;
     }
     
@@ -587,7 +733,8 @@ function doGet(e) {
       investments: investments,
       listedProjects: listedProjects,
       individualPortfolios: individualPortfolios,
-      vestingChart: vestingData
+      vestingChart: vestingData,
+      individualVestingData: individualVestingData
     };
     
     // Only include blockchain categories if requested
