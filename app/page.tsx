@@ -150,7 +150,7 @@ function formatCurrencyClean(value: string | undefined | null): string {
 	if (!value || value === '-') return '-';
 	
 	// Remove $ sign and all non-numeric characters except decimal points
-	let cleanValue = value.replace(/^\$/, '').replace(/[,\s]/g, '');
+	const cleanValue = value.replace(/^\$/, '').replace(/[,\s]/g, '');
 	
 	// Parse as number
 	const number = parseFloat(cleanValue);
@@ -215,7 +215,7 @@ function formatTokensReceived(value: string | undefined | null): string {
 	if (!value || value === '-') return '-';
 	
 	// Remove $ sign and all non-numeric characters except decimal points
-	let cleanValue = value.replace(/^\$/, '').replace(/[,\s]/g, '');
+	const cleanValue = value.replace(/^\$/, '').replace(/[,\s]/g, '');
 	
 	// Parse as number
 	const number = parseFloat(cleanValue);
@@ -233,7 +233,7 @@ function formatPrice(value: string | undefined | null): string {
 	if (!value || value === '-') return '-';
 	
 	// Remove $ sign and all non-numeric characters except decimal points
-	let cleanValue = value.replace(/^\$/, '').replace(/[,\s]/g, '');
+	const cleanValue = value.replace(/^\$/, '').replace(/[,\s]/g, '');
 	
 	// Parse as number
 	const number = parseFloat(cleanValue);
@@ -246,32 +246,7 @@ function formatPrice(value: string | undefined | null): string {
 }
 
 // Helper function to format unlock amounts (same as regular currency now)
-function formatUnlockAmount(value: string | undefined | null): string {
-	if (!value || value === '-') return '-';
-	
-	// Remove $ sign and all non-numeric characters except decimal points
-	let cleanValue = value.replace(/^\$/, '').replace(/[,\s]/g, '');
-	
-	// Parse as number
-	const number = parseFloat(cleanValue);
-	
-	// If it's not a valid number, return original value
-	if (isNaN(number)) return value;
-	
-	// Remove last 3 digits: same logic as formatCurrencyClean
-	const numberStr = Math.floor(number).toString();
-	let truncated;
-	
-	if (numberStr.length > 3) {
-		// Remove last 3 digits
-		truncated = parseInt(numberStr.slice(0, -3));
-	} else {
-		// If less than 3 digits, keep as is
-		truncated = Math.floor(number);
-	}
-	
-	return '$' + truncated.toLocaleString();
-}
+// Removed unused formatUnlockAmount function
 
 // Helper function to format unlock columns
 function formatUnlockColumn(value: string, type: 'days' | 'currency' | 'days-full'): string {
@@ -366,7 +341,7 @@ function VestingChart({ data }: { data: VestingData[] }) {
 					Token Unlock Schedule
 				</h3>
 				<p style={{ margin: '8px 0', fontSize: '14px' }}>
-					No vesting data available. Expected data from "Listing Vesting Chart" tab.
+					No vesting data available. Expected data from &quot;Listing Vesting Chart&quot; tab.
 				</p>
 				<p style={{ margin: '4px 0', fontSize: '12px', color: '#999' }}>
 					Debug: Received {data ? data.length : 0} vesting records
@@ -396,7 +371,7 @@ function VestingChart({ data }: { data: VestingData[] }) {
 				const value = monthData[project as keyof VestingData] as number || 0;
 				if (value > 50000) {
 					// Cap suspiciously high values for first month
-					(processed as any)[project] = Math.min(value * 0.02, 15000);
+					(processed as Record<string, unknown>)[project] = Math.min(value * 0.02, 15000);
 				}
 			});
 			return processed;
@@ -1206,7 +1181,7 @@ function BlockchainCategoryBarChart({ data }: { data: BlockchainCategory[] }) {
 						style={{ position: 'absolute', top: 0, left: 0, zIndex: 1 }}
 					>
 						{/* Horizontal grid lines */}
-						{yAxisIntervals.map((value, index) => {
+						{yAxisIntervals.map((value) => {
 							const ratio = value / chartMaxRoi;
 							return (
 								<line
@@ -1251,7 +1226,7 @@ function BlockchainCategoryBarChart({ data }: { data: BlockchainCategory[] }) {
 						gap: '16px',
 						justifyContent: 'flex-start'
 					}}>
-						{chartData.map((item, index) => {
+						{chartData.map((item) => {
 							const realisedHeight = (item.realisedRoi / chartMaxRoi) * 300;
 							const unrealisedHeight = (item.unrealisedRoi / chartMaxRoi) * 300;
 							const isHovered = hoveredSegment?.category === item.category;
@@ -1693,12 +1668,12 @@ function IndividualPortfolioDashboard({
 			const col = sortKey;
 			const colDef = INDIVIDUAL_COLUMNS.find(c => c.key === col);
 			if (colDef?.numeric) {
-				const av = parseNumberLike((a as any)[col]);
-				const bv = parseNumberLike((b as any)[col]);
+				const av = parseNumberLike((a as Record<string, unknown>)[col] as string);
+				const bv = parseNumberLike((b as Record<string, unknown>)[col] as string);
 				return sortDir === 'desc' ? bv - av : av - bv;
 			}
-			const avs = String((a as any)[col] ?? '');
-			const bvs = String((b as any)[col] ?? '');
+			const avs = String((a as Record<string, unknown>)[col] ?? '');
+			const bvs = String((b as Record<string, unknown>)[col] ?? '');
 			return sortDir === 'desc' ? bvs.localeCompare(avs) : avs.localeCompare(bvs);
 		});
 		return arr;
@@ -1979,16 +1954,16 @@ function IndividualPortfolioDashboard({
 											</div>
 										</td>
 										{INDIVIDUAL_COLUMNS.slice(1).map((col, colIndex) => {
-											const value = (investment as any)[col.key];
-											let formattedValue = formatCell(value) || '-';
+											const value = (investment as Record<string, unknown>)[col.key];
+											let formattedValue = formatCell(value as string) || '-';
 											
 											if (col.key === 'totalInvested' || col.key === 'totalValue' || col.key === 'realisedValue' || 
 												col.key === 'unrealisedValue' || col.key === 'realisedPnL' || col.key === 'liquidValue') {
-												formattedValue = formatTokensReceived(value);
+												formattedValue = formatTokensReceived(value as string);
 											} else if (col.key === 'share') {
-												formattedValue = formatPercentage(value);
+												formattedValue = formatPercentage(value as string);
 											} else if (col.key === 'roi' || col.key === 'realisedRoi') {
-												formattedValue = formatROI(value);
+												formattedValue = formatROI(value as string);
 											}
 											
 											// Color coding for financial metrics
@@ -2062,7 +2037,7 @@ export default function HomePage() {
 	if (data?.individualPortfolios) {
 		console.log('Frontend received individual portfolios:', Object.keys(data.individualPortfolios));
 		Object.keys(data.individualPortfolios).forEach(key => {
-			const portfolio = (data.individualPortfolios as any)[key];
+			const portfolio = (data.individualPortfolios as Record<string, IndividualPortfolio>)[key];
 			console.log(`${key}: ${portfolio?.name}, ${portfolio?.investments?.length || 0} investments, summary: ${portfolio?.summary ? 'yes' : 'no'}`);
 		});
 	}
@@ -2095,16 +2070,16 @@ export default function HomePage() {
 			const col = sortKey;
 			const colDef = COLUMNS.find(c => c.key === col);
 			if (colDef?.numeric) {
-				const av = parseNumberLike((a as any)[col]);
-				const bv = parseNumberLike((b as any)[col]);
+				const av = parseNumberLike((a as Record<string, unknown>)[col] as string);
+				const bv = parseNumberLike((b as Record<string, unknown>)[col] as string);
 				return sortDir === 'desc' ? bv - av : av - bv;
 			}
-			const avs = String((a as any)[col] ?? '');
-			const bvs = String((b as any)[col] ?? '');
+			const avs = String((a as Record<string, unknown>)[col] ?? '');
+			const bvs = String((b as Record<string, unknown>)[col] ?? '');
 			return sortDir === 'desc' ? bvs.localeCompare(avs) : avs.localeCompare(bvs);
 		});
 		return arr;
-	}, [items, sortKey, sortDir]);
+	}, [items, sortKey, sortDir, COLUMNS]);
 
 	function onHeaderClick(k: ColKey) {
 		if (k !== sortKey) { setSortKey(k); setSortDir('desc'); }
@@ -2760,25 +2735,25 @@ export default function HomePage() {
 											{i.name}
 										</a>
 									</td>
-										{COLUMNS.slice(1).map((col, colIndex) => {
-											const value = (i as any)[col.key];
+									{COLUMNS.slice(1).map((col, colIndex) => {
+										const value = (i as Record<string, unknown>)[col.key];
 											let formattedValue;
 											
 											// Special formatting for unlock columns
 											if (col.key === 'nextUnlock') {
-												formattedValue = formatUnlockColumn(value, 'days');
+												formattedValue = formatUnlockColumn(value as string, 'days');
 											} else if (col.key === 'nextUnlock2') {
-												formattedValue = formatUnlockColumn(value, 'currency');
+												formattedValue = formatUnlockColumn(value as string, 'currency');
 											} else if (col.key === 'fullUnlock') {
-												formattedValue = formatUnlockColumn(value, 'days-full');
+												formattedValue = formatUnlockColumn(value as string, 'days-full');
 											} else if (col.key === 'buyPrice' || col.key === 'currentPrice') {
 												// Format price columns with thousands decimals
-												formattedValue = formatPrice(value);
+												formattedValue = formatPrice(value as string);
 											} else if (col.key === 'vesting') {
 												// Vesting column - keep as is (could be text or percentage)
-												formattedValue = value || '-';
+												formattedValue = (value as string) || '-';
 											} else {
-												formattedValue = formatCell(value) || '-';
+												formattedValue = formatCell(value as string) || '-';
 											}
 											
 											// Color coding for financial metrics
@@ -2800,8 +2775,6 @@ export default function HomePage() {
 												}
 											}
 											
-											// Check if this is an unlock column for bold styling
-											const isUnlockColumn = col.key === 'nextUnlock' || col.key === 'nextUnlock2' || col.key === 'fullUnlock';
 											
 											return (
 												<td 

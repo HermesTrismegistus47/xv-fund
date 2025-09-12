@@ -12,8 +12,8 @@ export async function GET() {
         console.log('API: Investments count:', data?.investments?.length || 0);
         console.log('API: Blockchain categories count:', data?.blockchainCategories?.length || 0);
         return NextResponse.json(data, { status: 200 });
-    } catch (e: any) {
+    } catch (e: unknown) {
         console.error('API Error:', e);
-        return NextResponse.json({ error: e?.message || 'Unknown error' }, { status: 500 });
+        return NextResponse.json({ error: (e as Error)?.message || 'Unknown error' }, { status: 500 });
     }
 }
