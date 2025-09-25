@@ -1777,7 +1777,7 @@ function IndividualPortfolioDashboard({
 	sortDir: 'desc' | 'asc';
 	individualVestingData?: VestingData[];
 	overviewInvestments?: Investment[];
-	data?: any;
+	data?: any; // eslint-disable-line @typescript-eslint/no-explicit-any
 }) {
 	// Helper function to get price data and percentage data from overview investments
 	const getOverviewDataForInvestment = (investmentName: string) => {
@@ -3164,7 +3164,7 @@ function IndividualPortfolioDashboard({
 			{overviewInvestments && data?.vestingChart && data.vestingChart.length > 0 && (
 				(() => {
 					// Calculate proportional vesting data based on share percentages
-					const proportionalVestingData = data.vestingChart.map((monthData: any) => {
+					const proportionalVestingData = data.vestingChart.map((monthData: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
 						const proportionalMonth = { month: monthData.month };
 						
 						// For each project, calculate the proportional amount based on portfolio share (excluding already vested projects)
@@ -3203,7 +3203,7 @@ function IndividualPortfolioDashboard({
 					});
 					
 					// Only show the chart if there's meaningful data (excluding already vested projects)
-					const hasData = proportionalVestingData.some((month: any) => 
+					const hasData = proportionalVestingData.some((month: any) => // eslint-disable-line @typescript-eslint/no-explicit-any
 						['Tars', 'Heurist', 'Humanity', 'Giza Seed', 'Giza Legion', 'Creatorbid'].some(project => 
 							(month[project as keyof typeof month] as number || 0) > 0
 						)

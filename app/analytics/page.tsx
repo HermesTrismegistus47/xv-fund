@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import useSWR from 'swr';
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
@@ -191,7 +191,7 @@ export default function Analytics() {
 		);
 	}
 
-	const { overview, investments, blockchainCategories } = data;
+	const { blockchainCategories } = data;
 
 	return (
 		<div style={{ 
