@@ -19,6 +19,7 @@ type Investment = {
 	fullUnlock: string;
 	buyPrice: string;
 	currentPrice: string;
+	avgSellPrice: string;
 	vesting: string;
 };
 
@@ -67,12 +68,21 @@ type IndividualInvestment = {
 	realisedValue: string;
 	unrealisedValue: string;
 	realisedPnL: string;
-	roi: string;
+	unrealisedRoi: string;  // Renamed from roi
 	realisedRoi: string;
+	outstandingUSDC: string;  // Outstanding Distributions USDC
+	outstandingETH: string;   // Outstanding Distributions ETH
+	outstandingSOL: string;   // Outstanding Distributions SOL
+	liquidValue: string;
+	dpi: string;
+	buyPrice: string;
+	currentPrice: string;
+	avgSellPrice: string;
+	percentReceived: string;
+	percentSold: string;
 	withdrawUSD: string;
 	withdrawETH: string;
 	withdrawSOL: string;
-	liquidValue: string;
 };
 
 type IndividualPortfolio = {
@@ -86,12 +96,16 @@ type IndividualPortfolio = {
 		realisedValue: string;
 		unrealisedValue: string;
 		realisedPnL: string;
-		roi: string;
+		unrealisedRoi: string;  // Renamed from roi
 		realisedRoi: string;
+		outstandingUSDC: string;  // Outstanding Distributions USDC
+		outstandingETH: string;   // Outstanding Distributions ETH
+		outstandingSOL: string;   // Outstanding Distributions SOL
+		liquidValue: string;
+		dpi: string;
 		withdrawUSD: string;
 		withdrawETH: string;
 		withdrawSOL: string;
-		liquidValue: string;
 	};
 };
 
@@ -276,7 +290,7 @@ function formatUnlockColumn(value: string, type: 'days' | 'currency' | 'days-ful
 	return value;
 }
 
-// Helper function to get top 3 liquid positions
+// Helper function to get top 5 liquid positions
 function getTopLiquidPositions(investments: Investment[]): string {
 	const liquidPositions = investments
 		.map(inv => ({
@@ -285,13 +299,52 @@ function getTopLiquidPositions(investments: Investment[]): string {
 		}))
 		.filter(pos => pos.liquidValue > 0)
 		.sort((a, b) => b.liquidValue - a.liquidValue)
-		.slice(0, 4);
+		.slice(0, 5);
 	
 	if (liquidPositions.length === 0) return 'No liquid positions';
 	return liquidPositions.map(pos => 
 		`${pos.name}: ${formatTokensReceived('$' + pos.liquidValue.toLocaleString())}`
 	).join(' • ');
 }
+
+// Helper function to get top 5 biggest positions by total value
+function getTop5BiggestPositions(investments: Investment[], totalPortfolioValue: number) {
+	return investments
+		.map(inv => ({
+			name: inv.name,
+			totalValue: parseFloat(inv.totalValue?.replace(/[$,\s\u202F\u00A0â¯]/g, '') || '0'),
+			buyPrice: inv.buyPrice || '',
+			currentPrice: inv.currentPrice || '',
+			avgSellPrice: inv.avgSellPrice || ''
+		}))
+		.filter(pos => pos.totalValue > 0)
+		.sort((a, b) => b.totalValue - a.totalValue)
+		.slice(0, 5)
+		.map(pos => ({
+			...pos,
+			percentage: totalPortfolioValue > 0 ? (pos.totalValue / totalPortfolioValue) * 100 : 0
+		}));
+}
+
+// Helper function to get top 5 realised positions by realised value
+function getTop5RealisedPositions(investments: Investment[], totalRealisedValue: number) {
+	return investments
+		.map(inv => ({
+			name: inv.name,
+			realisedValue: parseFloat(inv.realisedValue?.replace(/[$,\s\u202F\u00A0â¯]/g, '') || '0'),
+			realisedRoi: inv.realisedRoi || '',
+			percentReceived: inv.percentReceived || '',
+			percentSold: inv.percentSold || ''
+		}))
+		.filter(pos => pos.realisedValue > 0)
+		.sort((a, b) => b.realisedValue - a.realisedValue)
+		.slice(0, 5)
+		.map(pos => ({
+			...pos,
+			percentageOfRealised: totalRealisedValue > 0 ? (pos.realisedValue / totalRealisedValue) * 100 : 0
+		}));
+}
+
 
 // Helper function to get top 3 liquid positions for individual portfolios
 function getTopIndividualLiquidPositions(investments: IndividualInvestment[]): string {
@@ -350,11 +403,9 @@ function VestingChart({ data }: { data: VestingData[] }) {
 		);
 	}
 
-	// Project colors for the stacked bars - removed Hatom, Tap, Tada
+	// Project colors for the stacked bars - removed Hatom, Tap, Tada, Peaq, CTA (already vested)
 	const projectColors: Record<string, string> = {
-		'Peaq': '#f59e0b',
 		'Tars': '#ef4444',
-		'CTA': '#06b6d4',
 		'Heurist': '#84cc16',
 		'Humanity': '#f97316',
 		'Giza Seed': '#ec4899',
@@ -362,25 +413,8 @@ function VestingChart({ data }: { data: VestingData[] }) {
 		'Creatorbid': '#14b8a6'
 	};
 
-	// Process data to fix October issue - cap first month values
-	const processedData = data.map((monthData, index) => {
-		if (index === 0) {
-			// First month (October) - cap values that seem too high
-			const processed = { ...monthData };
-			Object.keys(projectColors).forEach(project => {
-				const value = monthData[project as keyof VestingData] as number || 0;
-				if (value > 50000) {
-					// Cap suspiciously high values for first month
-					(processed as Record<string, unknown>)[project] = Math.min(value * 0.02, 15000);
-				}
-			});
-			return processed;
-		}
-		return monthData;
-	});
-
-	// Calculate max value for scaling using processed data
-	const maxMonthlyValue = Math.max(...processedData.map(month => 
+	// Calculate max value for scaling - Apps Script now provides correct monthly deltas
+	const maxMonthlyValue = Math.max(...data.map(month => 
 		Object.keys(projectColors).reduce((sum, project) => 
 			sum + (month[project as keyof VestingData] as number || 0), 0
 		)
@@ -416,7 +450,7 @@ function VestingChart({ data }: { data: VestingData[] }) {
 					margin: 0,
 					fontWeight: 400
 				}}>
-					Monthly vesting schedule for top performing investments (through March 2028)
+					Monthly vesting schedule for listed projects (through March 2028)
 				</p>
 			</div>
 			
@@ -442,7 +476,7 @@ function VestingChart({ data }: { data: VestingData[] }) {
 						borderRadius: '8px',
 						padding: '20px'
 					}}>
-						{processedData.map((monthData, index) => {
+						{data.map((monthData, index) => {
 							const monthTotal = Object.keys(projectColors).reduce((sum, project) => 
 								sum + (monthData[project as keyof VestingData] as number || 0), 0
 							);
@@ -1591,7 +1625,8 @@ function Stat({ label, value, trend, subtitle, customColor }: {
 type ColKey =
 	| 'name' | 'totalInvested' | 'totalValue' | 'realisedValue' | 'realisedPnL' | 'roi'
 	| 'realisedRoi' | 'percentReceived' | 'percentSold' | 'liquidValue'
-	| 'nextUnlock' | 'nextUnlock2' | 'fullUnlock' | 'buyPrice' | 'currentPrice' | 'vesting';
+	| 'nextUnlock' | 'nextUnlock2' | 'fullUnlock' | 'buyPrice' | 'currentPrice' | 'avgSellPrice' | 'vesting'
+	| 'share' | 'unrealisedValue' | 'unrealisedRoi' | 'outstandingUSDC' | 'outstandingETH' | 'outstandingSOL' | 'dpi';
 
 const COLUMNS: { key: ColKey; label: string; numeric?: boolean }[] = [
 	{ key: 'name', label: 'Name' },
@@ -1609,6 +1644,7 @@ const COLUMNS: { key: ColKey; label: string; numeric?: boolean }[] = [
 	{ key: 'fullUnlock', label: 'Full Unlock' },
 	{ key: 'buyPrice', label: 'Buy Price', numeric: true },
 	{ key: 'currentPrice', label: 'Current Price', numeric: true },
+	{ key: 'avgSellPrice', label: 'Avg Sell Price', numeric: true },
 	{ key: 'vesting', label: 'Vesting' },
 ];
 
@@ -1634,32 +1670,153 @@ function formatCell(v: string) {
 	return v;
 }
 
+// Helper function to format Outstanding Distributions with currency suffixes
+function formatOutstandingDistribution(value: string | undefined | null, currency: 'USDC' | 'ETH' | 'SOL'): string {
+	if (!value || value === '' || value === '/') return '/';
+	
+	// Handle numeric values
+	const cleanValue = value.toString().replace(/[,\s]/g, '');
+	const number = parseFloat(cleanValue);
+	
+	if (isNaN(number)) return value.toString();
+	
+	// Format the number with appropriate decimals
+	let formattedNumber: string;
+	if (currency === 'USDC') {
+		// USDC: 2 decimal places, add commas for thousands
+		formattedNumber = number.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+	} else {
+		// ETH/SOL: up to 6 decimal places, remove trailing zeros
+		formattedNumber = number.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 6 });
+	}
+	
+	return `${formattedNumber} ${currency}`;
+}
+
 // Individual Portfolio Dashboard Component
+// Standardized table template for Top 5 tables
+const StandardTop5Table = ({ 
+	headers, 
+	rows 
+}: { 
+	headers: string[]; 
+	rows: (string | number)[][];
+}) => (
+	<div style={{ overflowX: 'auto' }}>
+		<table style={{ 
+			width: '100%', 
+			borderCollapse: 'collapse', 
+			fontSize: '13px',
+			fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+			tableLayout: 'fixed'
+		}}>
+			<thead>
+				<tr style={{ 
+					backgroundColor: '#f8f9fa',
+					borderBottom: '1px solid #e1e5e9'
+				}}>
+					{headers.map((header, index) => (
+						<th key={header} style={{ 
+							textAlign: index === 0 ? 'left' : 'right', 
+							padding: '12px 16px', 
+							fontWeight: 500, 
+							fontSize: '11px', 
+							letterSpacing: '0.02em', 
+							textTransform: 'uppercase', 
+							color: '#6c7281',
+							width: index === 0 ? '200px' : index === 5 ? '140px' : index === 4 ? '100px' : '120px'
+						}}>
+							{header}
+						</th>
+					))}
+				</tr>
+			</thead>
+			<tbody>
+				{rows.map((row, rowIndex) => {
+					const isEven = rowIndex % 2 === 0;
+					const rowBg = isEven ? '#ffffff' : '#fafbfc';
+					
+					return (
+						<tr 
+							key={rowIndex}
+							style={{
+								background: rowBg,
+								borderBottom: rowIndex < rows.length - 1 ? '1px solid #f1f3f4' : 'none'
+							}}
+						>
+							{row.map((cell, cellIndex) => (
+								<td key={cellIndex} style={{ 
+									padding: '12px 16px', 
+									textAlign: cellIndex === 0 ? 'left' : 'right',
+									fontWeight: cellIndex === 0 ? 500 : 400,
+									borderRight: cellIndex === 0 ? '1px solid #f1f3f4' : 'none'
+								}}>
+									{cell}
+								</td>
+							))}
+						</tr>
+					);
+				})}
+			</tbody>
+		</table>
+	</div>
+);
+
 function IndividualPortfolioDashboard({ 
 	portfolio, 
 	onHeaderClick, 
 	sortKey, 
 	sortDir,
-	individualVestingData
+	individualVestingData,
+	overviewInvestments,
+	data
 }: { 
 	portfolio: IndividualPortfolio;
 	onHeaderClick: (k: ColKey) => void;
 	sortKey: string;
 	sortDir: 'desc' | 'asc';
 	individualVestingData?: VestingData[];
+	overviewInvestments?: Investment[];
+	data?: any;
 }) {
+	// Helper function to get price data and percentage data from overview investments
+	const getOverviewDataForInvestment = (investmentName: string) => {
+		if (!overviewInvestments) return { 
+			buyPrice: '', 
+			currentPrice: '', 
+			avgSellPrice: '', 
+			percentReceived: '', 
+			percentSold: '' 
+		};
+		
+		const overviewInvestment = overviewInvestments.find(inv => inv.name === investmentName);
+		return {
+			buyPrice: overviewInvestment?.buyPrice || '',
+			currentPrice: overviewInvestment?.currentPrice || '',
+			avgSellPrice: overviewInvestment?.avgSellPrice || '',
+			percentReceived: overviewInvestment?.percentReceived || '',
+			percentSold: overviewInvestment?.percentSold || ''
+		};
+	};
+
 	// Column definitions for individual portfolio table
-	const INDIVIDUAL_COLUMNS = [
+	const INDIVIDUAL_COLUMNS: { key: ColKey; label: string; numeric?: boolean }[] = [
 		{ key: 'name', label: 'Investment', numeric: false },
 		{ key: 'totalInvested', label: 'Total Invested', numeric: true },
 		{ key: 'share', label: 'Share %', numeric: true },
 		{ key: 'totalValue', label: 'Total Value', numeric: true },
+		{ key: 'realisedValue', label: 'Realised Value', numeric: true },  // Moved before P&L
 		{ key: 'realisedPnL', label: 'Realised P&L', numeric: true },
-		{ key: 'realisedValue', label: 'Realised Value', numeric: true },
 		{ key: 'unrealisedValue', label: 'Unrealised Value', numeric: true },
-		{ key: 'roi', label: 'ROI', numeric: true },
+		{ key: 'unrealisedRoi', label: 'Unrealised ROI', numeric: true },  // Renamed from ROI
 		{ key: 'realisedRoi', label: 'Realised ROI', numeric: true },
+		{ key: 'outstandingUSDC', label: 'Outstanding USDC', numeric: true },  // Outstanding Distributions
+		{ key: 'outstandingETH', label: 'Outstanding ETH', numeric: true },
+		{ key: 'outstandingSOL', label: 'Outstanding SOL', numeric: true },
 		{ key: 'liquidValue', label: 'Liquid Value', numeric: true },
+		{ key: 'dpi', label: 'DPI', numeric: true },
+		{ key: 'percentReceived', label: '% Received', numeric: true },
+		{ key: 'percentSold', label: '% Sold', numeric: true },
 	];
 
 	const sorted = useMemo(() => {
@@ -1668,16 +1825,40 @@ function IndividualPortfolioDashboard({
 			const col = sortKey;
 			const colDef = INDIVIDUAL_COLUMNS.find(c => c.key === col);
 			if (colDef?.numeric) {
-				const av = parseNumberLike((a as Record<string, unknown>)[col] as string);
-				const bv = parseNumberLike((b as Record<string, unknown>)[col] as string);
+				let av: number, bv: number;
+				
+				// Handle special cases for % received and % sold which come from overview data
+				if (col === 'percentReceived' || col === 'percentSold') {
+					const aOverviewData = getOverviewDataForInvestment(a.name);
+					const bOverviewData = getOverviewDataForInvestment(b.name);
+					const aValue = col === 'percentReceived' ? aOverviewData.percentReceived : aOverviewData.percentSold;
+					const bValue = col === 'percentReceived' ? bOverviewData.percentReceived : bOverviewData.percentSold;
+					av = parseNumberLike(aValue);
+					bv = parseNumberLike(bValue);
+				} else {
+					av = parseNumberLike((a as Record<string, unknown>)[col] as string);
+					bv = parseNumberLike((b as Record<string, unknown>)[col] as string);
+				}
+				
 				return sortDir === 'desc' ? bv - av : av - bv;
 			}
-			const avs = String((a as Record<string, unknown>)[col] ?? '');
-			const bvs = String((b as Record<string, unknown>)[col] ?? '');
+			
+			// Handle string sorting for non-numeric columns
+			let avs: string, bvs: string;
+			if (col === 'percentReceived' || col === 'percentSold') {
+				const aOverviewData = getOverviewDataForInvestment(a.name);
+				const bOverviewData = getOverviewDataForInvestment(b.name);
+				avs = col === 'percentReceived' ? aOverviewData.percentReceived : aOverviewData.percentSold;
+				bvs = col === 'percentReceived' ? bOverviewData.percentReceived : bOverviewData.percentSold;
+			} else {
+				avs = String((a as Record<string, unknown>)[col] ?? '');
+				bvs = String((b as Record<string, unknown>)[col] ?? '');
+			}
+			
 			return sortDir === 'desc' ? bvs.localeCompare(avs) : avs.localeCompare(bvs);
 		});
 		return arr;
-	}, [portfolio.investments, sortKey, sortDir]);
+	}, [portfolio.investments, sortKey, sortDir, overviewInvestments]);
 
 	return (
 		<>
@@ -1693,29 +1874,49 @@ function IndividualPortfolioDashboard({
 					Portfolio Performance
 				</h2>
 				{portfolio.summary ? (
+					(() => {
+						// Calculate Unrealised P&L: totalValue - totalInvested
+						const totalInvestedNum = parseFloat(portfolio.summary.totalInvested?.replace(/[$,\s\u202F\u00A0â¯]/g, '') || '0');
+						const totalValueNum = parseFloat(portfolio.summary.totalValue?.replace(/[$,\s\u202F\u00A0â¯]/g, '') || '0');
+						const unrealisedPnL = totalValueNum - totalInvestedNum;
+						const unrealisedPnLFormatted = unrealisedPnL >= 0 ? `$${Math.round(Math.abs(unrealisedPnL)).toLocaleString()}` : `-$${Math.round(Math.abs(unrealisedPnL)).toLocaleString()}`;
+						
+						return (
+							<div>
+								{/* First Row */}
 					<div style={{ 
 						display: 'grid', 
-						gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
-						gap: '16px'
+									gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', 
+									gap: '16px',
+									marginBottom: '16px'
 					}}>
 						<Stat 
 							label="Total Invested" 
 								value={formatTokensReceived(portfolio.summary.totalInvested)}
 							trend="neutral"
-							subtitle="Capital deployed"
+										subtitle="Capital deployed to date"
 						/>
 						<Stat 
 							label="Realised Value" 
 								value={formatTokensReceived(portfolio.summary.realisedValue)}
 							trend="neutral"
-							subtitle="Cash returned"
+										customColor="#000000"
+										subtitle="Cash returned to fund"
 						/>
 						<Stat 
-							label="Unrealised Value" 
+										label="Total Value" 
 								value={formatTokensReceived(portfolio.summary.totalValue)}
 							trend="neutral"
-							subtitle="Current market value"
-						/>
+										subtitle="Current market valuation"
+									/>
+								</div>
+								
+								{/* Second Row */}
+								<div style={{ 
+									display: 'grid', 
+									gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', 
+									gap: '16px'
+								}}>
 						<Stat 
 							label="Realised P&L" 
 								value={formatTokensReceived(portfolio.summary.realisedPnL)}
@@ -1723,18 +1924,27 @@ function IndividualPortfolioDashboard({
 							subtitle="Profit/Loss on exits"
 						/>
 						<Stat 
-							label="Unrealised ROI" 
-							value={formatROI(portfolio.summary.roi)} 
-							trend={portfolio.summary.roi && parseFloat(portfolio.summary.roi.replace('x', '')) >= 1 ? "positive" : "negative"}
-							subtitle="Overall return multiple"
-						/>
-						<Stat 
 							label="Realised ROI" 
 							value={formatROI(portfolio.summary.realisedRoi)} 
-							trend={portfolio.summary.realisedRoi && parseFloat(portfolio.summary.realisedRoi.replace('x', '')) >= 1 ? "positive" : "negative"}
+										trend={portfolio.summary.realisedRoi && parseFloat(portfolio.summary.realisedRoi.replace('x', '')) < 1 ? "negative" : "positive"}
 							subtitle="Return on realised investments"
 						/>
+									<Stat 
+										label="Unrealised P&L" 
+										value={unrealisedPnLFormatted}
+										trend={unrealisedPnL >= 0 ? "positive" : "negative"}
+										subtitle="Unrealised profit/loss"
+									/>
+									<Stat 
+										label="UNREALISED ROI" 
+										value={formatROI(portfolio.summary.unrealisedRoi)} 
+										trend={portfolio.summary.unrealisedRoi && parseFloat(portfolio.summary.unrealisedRoi.replace('x', '')) >= 1 ? "positive" : "negative"}
+										subtitle="Overall return multiple"
+						/>
 					</div>
+							</div>
+						);
+					})()
 				) : (
 					<div style={{
 						padding: '24px',
@@ -1754,28 +1964,222 @@ function IndividualPortfolioDashboard({
 				)}
 			</div>
 
-			{/* Liquid Value Showcase */}
+			{/* Portfolio Composition Section */}
+			{portfolio.summary && overviewInvestments && (
+				(() => {
+					// Calculate total investments (with adjustment for specific portfolios)
+					const portfoliosToAdjust = ['zohair', 'iaad', 'mikado', 'bahman', 'matthias'];
+					const portfolioKey = portfolio.name.toLowerCase().replace(' portfolio', '');
+					const totalInvestments = portfoliosToAdjust.includes(portfolioKey) 
+						? portfolio.investments.length - 1 
+						: portfolio.investments.length;
+
+					// Calculate Pre-TGE projects (ROI = 1.00 from individual portfolio data, excluding Kebapp)
+					const preTgeProjects = portfolio.investments.filter(inv => {
+						if (inv.name.toLowerCase().includes('kebapp')) return false;
+						// Use ROI from individual portfolio data (column I) - check multiple formats
+						const roi = inv.unrealisedRoi;
+						console.log(`DEBUG Pre-TGE: ${inv.name} has ROI: "${roi}"`);
+						return roi === '1.00x' || roi === '1.00' || roi === '1' || parseFloat(roi.replace('x', '')) === 1.0;
+					}).length;
+					
+					console.log(`DEBUG: Portfolio ${portfolio.name} - Total investments: ${totalInvestments}, Pre-TGE: ${preTgeProjects}, Listed: ${totalInvestments - preTgeProjects}`);
+
+					// Calculate Listed projects
+					const listedProjects = totalInvestments - preTgeProjects;
+
+					// Calculate Received from Total Invested
+					// Use % received from overview (column I) multiplied by individual invested amounts (column C)
+					let receivedFromTotalInvested = 0;
+					let totalInvestedAmount = 0;
+					
+					console.log(`DEBUG Received Calc for ${portfolio.name}:`);
+					console.log(`DEBUG: Overview investments available:`, overviewInvestments?.length || 0);
+					
+					portfolio.investments.forEach(inv => {
+						const investedAmount = parseFloat(inv.totalInvested?.replace(/[$,\s\u202F\u00A0â¯]/g, '') || '0');
+						totalInvestedAmount += investedAmount;
+						
+						// Find matching investment in overview by name (column B)
+						const overviewInv = overviewInvestments.find(ov => ov.name === inv.name);
+						if (overviewInv) {
+							console.log(`  Found overview match for ${inv.name}: percentReceived="${overviewInv.percentReceived}"`);
+							if (overviewInv.percentReceived && overviewInv.percentReceived !== '-' && overviewInv.percentReceived !== '') {
+								// Handle different percentage formats
+								let percentReceived = 0;
+								const percentStr = overviewInv.percentReceived.toString();
+								
+								if (percentStr.includes('%')) {
+									// Format like "45%" -> 0.45
+									percentReceived = parseFloat(percentStr.replace('%', '')) / 100;
+								} else {
+									// Format like "0.45" or "45" (assuming it's already decimal or needs /100)
+									const numValue = parseFloat(percentStr);
+									if (numValue > 1) {
+										// Assume it's like "45" meaning 45%
+										percentReceived = numValue / 100;
+									} else {
+										// Assume it's already decimal like "0.45"
+										percentReceived = numValue;
+									}
+								}
+								
+								const contributionToReceived = investedAmount * percentReceived;
+								receivedFromTotalInvested += contributionToReceived;
+								console.log(`    ${inv.name}: invested=$${investedAmount}, %received="${percentStr}" (parsed as ${percentReceived}), contribution=$${contributionToReceived}`);
+							} else {
+								console.log(`    ${inv.name}: invested=$${investedAmount}, %received is empty or '-'`);
+							}
+						} else {
+							console.log(`  NO MATCH found for ${inv.name} in overview investments`);
+						}
+					});
+					
+					console.log(`DEBUG: Total invested: $${totalInvestedAmount}, Total received: $${receivedFromTotalInvested}`);
+
+					// For specific portfolios, exclude Degen Fund from percentage calculation
+					const portfoliosToExcludeDegen = ['zohair', 'iaad', 'mikado', 'bahman', 'matthias'];
+					const shouldExcludeDegen = portfoliosToExcludeDegen.includes(portfolioKey);
+					
+					console.log(`DEBUG: Portfolio name: "${portfolio.name}", Portfolio key: "${portfolioKey}", Should exclude Degen: ${shouldExcludeDegen}`);
+					
+					let adjustedTotalInvested = totalInvestedAmount;
+					if (shouldExcludeDegen) {
+						// Find Degen Fund investment (should be first row) and subtract its amount
+						const degenFundInvestment = portfolio.investments.find(inv => 
+							inv.name.toLowerCase().includes('degen fund') || inv.name.toLowerCase().includes('degen')
+						);
+						if (degenFundInvestment) {
+							const degenAmount = parseFloat(degenFundInvestment.totalInvested?.replace(/[$,\s\u202F\u00A0â¯]/g, '') || '0');
+							adjustedTotalInvested = totalInvestedAmount - degenAmount;
+							console.log(`DEBUG: Excluding Degen Fund ($${degenAmount}) from total. Adjusted total: $${adjustedTotalInvested}`);
+						}
+					}
+
+					const receivedPercentage = adjustedTotalInvested > 0 ? (receivedFromTotalInvested / adjustedTotalInvested) * 100 : 0;
+
+					// Calculate Return on tokens received
+					let realisedValue = parseFloat(portfolio.summary.realisedValue?.replace(/[$,\s\u202F\u00A0â¯]/g, '') || '0');
+					let liquidValue = parseFloat(portfolio.summary.liquidValue?.replace(/[$,\s\u202F\u00A0â¯]/g, '') || '0');
+					
+					// For specific portfolios, exclude Degen Fund from realised and liquid values
+					if (shouldExcludeDegen) {
+						const degenFundInvestment = portfolio.investments.find(inv => 
+							inv.name.toLowerCase().includes('degen fund') || inv.name.toLowerCase().includes('degen')
+						);
+						if (degenFundInvestment) {
+							const degenRealisedValue = parseFloat(degenFundInvestment.realisedValue?.replace(/[$,\s\u202F\u00A0â¯]/g, '') || '0');
+							const degenLiquidValue = parseFloat(degenFundInvestment.liquidValue?.replace(/[$,\s\u202F\u00A0â¯]/g, '') || '0');
+							
+							realisedValue = realisedValue - degenRealisedValue;
+							liquidValue = liquidValue - degenLiquidValue;
+							
+							console.log(`DEBUG: Excluding Degen Fund from return calc - Realised: -$${degenRealisedValue}, Liquid: -$${degenLiquidValue}`);
+							console.log(`DEBUG: Adjusted values - Realised: $${realisedValue}, Liquid: $${liquidValue}`);
+						}
+					}
+					
+					// Use receivedFromTotalInvested as denominator (not total invested)
+					const returnOnTokensReceived = receivedFromTotalInvested > 0 ? (realisedValue + liquidValue) / receivedFromTotalInvested : 0;
+					
+					console.log(`DEBUG Return calc: (realised=$${realisedValue} + liquid=$${liquidValue}) / received=$${receivedFromTotalInvested} = ${returnOnTokensReceived}`);
+
+					return (
+						<div style={{ marginBottom: '40px' }}>
+							<h2 style={{ 
+								fontSize: '18px', 
+								fontWeight: 600, 
+								color: '#1a1d29',
+								margin: '0 0 20px 0',
+								letterSpacing: '-0.01em'
+							}}>
+								Portfolio Composition{shouldExcludeDegen ? '*' : ''}
+							</h2>
+							{shouldExcludeDegen && (
+								<p style={{ 
+									fontSize: '12px', 
+									color: '#6c7281',
+									margin: '0 0 20px 0',
+									fontStyle: 'italic'
+								}}>
+									*Excluding Degen Fund
+								</p>
+							)}
+							
+							{/* Stats Grid - Exact same design as overview */}
+							<div style={{ 
+								display: 'grid', 
+								gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+								gap: '16px',
+								marginBottom: '24px'
+							}}>
+								<Stat 
+									label="Listed Projects" 
+									value={listedProjects} 
+									trend="neutral"
+									subtitle={`of ${totalInvestments} total investments`}
+								/>
+								<Stat 
+									label="Pre-TGE Projects" 
+									value={preTgeProjects} 
+									trend="neutral"
+									subtitle="Awaiting token generation"
+								/>
+								<Stat 
+									label="Received from Total Invested" 
+									value={formatTokensReceived(receivedFromTotalInvested.toString())} 
+									trend="neutral"
+									customColor="#000000"
+									subtitle={`${receivedPercentage.toFixed(1)}% of total invested`}
+								/>
+								<Stat 
+									label="Return on tokens received" 
+									value={`${returnOnTokensReceived.toFixed(2)}x`} 
+									trend={returnOnTokensReceived > 1 ? "positive" : "negative"}
+									subtitle="Including sold and liquid tokens"
+								/>
+							</div>
+						</div>
+					);
+				})()
+			)}
+
+			{/* Liquid Value Section - Exact same design as overview */}
 			{portfolio.summary && (
 				<div style={{ 
 					backgroundColor: '#ffffff',
 					border: '1px solid #e1e5e9',
-					borderRadius: '8px',
-					padding: '32px',
+					borderRadius: '4px',
 					marginBottom: '40px',
-					boxShadow: '0 2px 4px rgba(0, 0, 0, 0.06)'
+					boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+					overflow: 'hidden'
+				}}>
+					<div style={{ 
+						padding: '20px 24px', 
+						borderBottom: '1px solid #e1e5e9', 
+						backgroundColor: '#fafbfc'
 				}}>
 					<h3 style={{ 
-						fontSize: '18px', 
+							fontSize: '16px', 
 						fontWeight: 600, 
 						color: '#1a1d29',
-						margin: '0 0 24px 0',
-						letterSpacing: '-0.01em'
+							margin: '0 0 4px 0'
 					}}>
-						Liquid Positions Overview
+							Liquid Value
 					</h3>
+						<p style={{ 
+							fontSize: '13px', 
+							color: '#6c7281', 
+							margin: 0,
+							fontWeight: 400
+						}}>
+							Immediately tradeable assets
+						</p>
+					</div>
 					
-					<div style={{ display: 'flex', alignItems: 'flex-start', gap: '40px', flexWrap: 'wrap' }}>
-						{/* Total Liquid Value */}
+					<div style={{ padding: '24px' }}>
+						<div style={{ display: 'flex', alignItems: 'center', gap: '32px', flexWrap: 'wrap' }}>
+							{/* Total Liquid Value - Compact */}
 						<div style={{ flex: '0 0 auto' }}>
 							<div style={{ 
 								fontSize: '12px', 
@@ -1783,23 +2187,23 @@ function IndividualPortfolioDashboard({
 								color: '#6c7281', 
 								letterSpacing: '0.02em',
 								textTransform: 'uppercase',
-								marginBottom: '8px'
+									marginBottom: '6px'
 							}}>
 								Total Liquid Value
 							</div>
 							<div style={{ 
-								fontSize: '36px', 
+									fontSize: '32px', 
 								fontWeight: 700, 
 								color: '#1a1d29',
 								lineHeight: 1,
-								fontFamily: '"SF Mono", "Monaco", "Inconsolata", "Roboto Mono", monospace'
+									fontFamily: '"SF Mono", "Monaco", monospace'
 							}}>
 								{formatTokensReceived(portfolio.summary.liquidValue)}
 							</div>
 						</div>
 						
-						{/* Top 3 Liquid Positions */}
-						<div style={{ flex: '1 1 400px', minWidth: '300px' }}>
+							{/* Top 5 Liquid Positions - Horizontal List */}
+							<div style={{ flex: '1 1 auto', minWidth: '400px', paddingLeft: '40px' }}>
 							<div style={{ 
 								fontSize: '12px', 
 								fontWeight: 500, 
@@ -1808,25 +2212,1005 @@ function IndividualPortfolioDashboard({
 								textTransform: 'uppercase',
 								marginBottom: '12px'
 							}}>
-								Top Liquid Positions
+									Top 5 Liquid Positions
 							</div>
 							<div style={{ 
-								fontSize: '14px', 
+									display: 'flex',
+									gap: '16px',
+									flexWrap: 'wrap'
+								}}>
+									{(() => {
+										const liquidPositions = portfolio.investments
+											.map(inv => ({
+												name: inv.name,
+												liquidValue: parseFloat(inv.liquidValue?.replace(/[$,\s\u202F\u00A0â¯]/g, '') || '0')
+											}))
+											.filter(pos => pos.liquidValue > 0)
+											.sort((a, b) => b.liquidValue - a.liquidValue)
+											.slice(0, 5);
+										
+										return liquidPositions.map((position, index) => (
+											<div key={position.name} style={{
+												padding: '12px 16px',
+												backgroundColor: '#f8f9fa',
+												border: '1px solid #e1e5e9',
+												borderRadius: '6px',
+												minWidth: '140px',
+												position: 'relative'
+											}}>
+												{/* Ranking Badge */}
+												<div style={{
+													position: 'absolute',
+													top: '6px',
+													right: '6px',
+													width: '18px',
+													height: '18px',
+													backgroundColor: index === 0 ? '#059669' : '#6c7281',
+													color: 'white',
+													borderRadius: '50%',
+													display: 'flex',
+													alignItems: 'center',
+													justifyContent: 'center',
+													fontSize: '10px',
+													fontWeight: 700
+												}}>
+													{index + 1}
+												</div>
+												
+												<div style={{
+													fontSize: '12px',
+													fontWeight: 600,
 								color: '#374151',
-								lineHeight: '1.6',
-								fontWeight: 500,
-								letterSpacing: '0.01em'
-							}}>
-								{getTopIndividualLiquidPositions(portfolio.investments)}
+													marginBottom: '4px',
+													letterSpacing: '-0.01em',
+													lineHeight: '1.2',
+													paddingRight: '20px'
+												}}>
+													{position.name}
+												</div>
+												<div style={{
+													fontSize: '14px',
+													fontWeight: 700,
+													color: '#059669',
+													fontFamily: '"SF Mono", "Monaco", monospace',
+													letterSpacing: '-0.01em'
+												}}>
+													{formatTokensReceived('$' + position.liquidValue.toLocaleString())}
+												</div>
+											</div>
+										));
+									})()}
+								</div>
 							</div>
 						</div>
 					</div>
 				</div>
 			)}
 
-			{/* Individual Vesting Chart */}
-			{individualVestingData && individualVestingData.length > 0 && (
-				<VestingChart data={individualVestingData} />
+			{/* Top 5 Realised Positions - Exact same design as overview */}
+			{portfolio.summary && (
+				<div style={{ 
+					backgroundColor: '#ffffff',
+					border: '1px solid #e1e5e9',
+					borderRadius: '8px',
+					marginBottom: '40px',
+					boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+					overflow: 'hidden'
+				}}>
+					<div style={{ 
+						padding: '20px 24px', 
+						borderBottom: '1px solid #e1e5e9', 
+						backgroundColor: '#fafbfc'
+					}}>
+						<h3 style={{ 
+							fontSize: '16px', 
+							fontWeight: 600, 
+							color: '#1a1d29',
+							margin: '0 0 4px 0'
+						}}>
+							Top 5 Realised Positions
+						</h3>
+						<p style={{ 
+							fontSize: '13px', 
+							color: '#6c7281', 
+							margin: 0,
+							fontWeight: 400
+						}}>
+							Largest exits by realised value
+						</p>
+					</div>
+					
+					<div style={{ padding: '24px' }}>
+						{(() => {
+							// Calculate total realised value for individual portfolio
+							const totalRealisedValue = parseFloat(portfolio.summary.realisedValue?.replace(/[$,\s\u202F\u00A0â¯]/g, '') || '0');
+							
+							// Create realised positions from individual portfolio investments with overview data
+							const realisedPositions = portfolio.investments
+								.map(inv => {
+									const overviewData = getOverviewDataForInvestment(inv.name);
+									return {
+										name: inv.name,
+										realisedValue: parseFloat(inv.realisedValue?.replace(/[$,\s\u202F\u00A0â¯]/g, '') || '0'),
+										realisedRoi: inv.realisedRoi || '',
+										percentReceived: overviewData.percentReceived || '',
+										percentSold: overviewData.percentSold || ''
+									};
+								})
+								.filter(pos => pos.realisedValue > 0)
+								.sort((a, b) => b.realisedValue - a.realisedValue)
+								.slice(0, 5)
+								.map(pos => ({
+									...pos,
+									percentageOfRealised: totalRealisedValue > 0 ? (pos.realisedValue / totalRealisedValue) * 100 : 0
+								}));
+							
+							const totalTop5RealisedValue = realisedPositions.reduce((sum, pos) => sum + pos.realisedValue, 0);
+							const totalTop5RealisedPercentage = totalRealisedValue > 0 ? (totalTop5RealisedValue / totalRealisedValue) * 100 : 0;
+							
+							return (
+								<>
+									{/* Summary */}
+									<div style={{ 
+										display: 'flex', 
+										alignItems: 'center', 
+										gap: '40px', 
+										marginBottom: '32px',
+										padding: '20px',
+										backgroundColor: '#f8f9fa',
+										borderRadius: '6px'
+									}}>
+										<div>
+											<div style={{ 
+												fontSize: '12px', 
+								fontWeight: 500,
+												color: '#6c7281', 
+												letterSpacing: '0.02em',
+												textTransform: 'uppercase',
+												marginBottom: '8px'
+							}}>
+												Combined Value
+							</div>
+											<div style={{ 
+												fontSize: '28px', 
+												fontWeight: 700, 
+												color: '#1a1d29',
+												fontFamily: '"SF Mono", "Monaco", monospace'
+											}}>
+												{formatTokensReceived('$' + totalTop5RealisedValue.toLocaleString())}
+						</div>
+										</div>
+										<div>
+											<div style={{ 
+												fontSize: '12px', 
+												fontWeight: 500, 
+												color: '#6c7281', 
+												letterSpacing: '0.02em',
+												textTransform: 'uppercase',
+												marginBottom: '8px'
+											}}>
+												% of Total Realised
+											</div>
+											<div style={{ 
+												fontSize: '28px', 
+												fontWeight: 700, 
+												color: '#059669',
+												fontFamily: '"SF Mono", "Monaco", monospace'
+											}}>
+												{totalTop5RealisedPercentage.toFixed(1)}%
+											</div>
+										</div>
+									</div>
+
+									{/* Table */}
+									<div style={{ overflowX: 'auto' }}>
+										<table style={{ 
+											width: '100%', 
+											borderCollapse: 'collapse', 
+											fontSize: '13px',
+											fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+											tableLayout: 'fixed'
+										}}>
+											<thead>
+												<tr style={{ 
+													backgroundColor: '#f8f9fa',
+													borderBottom: '1px solid #e1e5e9'
+												}}>
+													<th style={{ 
+														textAlign: 'left', 
+														padding: '12px 16px', 
+														fontWeight: 500, 
+														fontSize: '11px', 
+														letterSpacing: '0.02em', 
+														textTransform: 'uppercase', 
+														color: '#6c7281',
+														width: '200px'
+													}}>
+														Name
+													</th>
+													<th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 500, fontSize: '11px', letterSpacing: '0.02em', textTransform: 'uppercase', color: '#6c7281', width: '140px' }}>Realised Value</th>
+													<th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 500, fontSize: '11px', letterSpacing: '0.02em', textTransform: 'uppercase', color: '#6c7281', width: '120px' }}>Realised ROI</th>
+													<th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 500, fontSize: '11px', letterSpacing: '0.02em', textTransform: 'uppercase', color: '#6c7281', width: '120px' }}>% Received</th>
+													<th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 500, fontSize: '11px', letterSpacing: '0.02em', textTransform: 'uppercase', color: '#6c7281', width: '100px' }}>% Sold</th>
+													<th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 500, fontSize: '11px', letterSpacing: '0.02em', textTransform: 'uppercase', color: '#6c7281', width: '140px' }}>% of Realised Value</th>
+												</tr>
+											</thead>
+											<tbody>
+												{realisedPositions.map((position, index) => {
+													const isEven = index % 2 === 0;
+													const rowBg = isEven ? '#ffffff' : '#fafbfc';
+													
+													return (
+														<tr 
+															key={position.name}
+															style={{
+																background: rowBg,
+																borderBottom: index < realisedPositions.length - 1 ? '1px solid #f1f3f4' : 'none'
+															}}
+														>
+															<td style={{ 
+																padding: '12px 16px', 
+																fontWeight: 500,
+																position: 'sticky',
+																left: '0',
+																zIndex: 5,
+																backgroundColor: rowBg,
+																minWidth: '200px',
+																maxWidth: '200px',
+																whiteSpace: 'nowrap',
+																overflow: 'hidden',
+																textOverflow: 'ellipsis'
+															}}>
+																<div style={{ 
+																	color: '#1a1d29', 
+																	fontWeight: 500,
+																	fontSize: '13px'
+																}}>
+																	{position.name}
+																</div>
+															</td>
+															<td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 500, color: '#1a1d29', fontFamily: '"SF Mono", "Monaco", monospace' }}>
+																{formatTokensReceived('$' + position.realisedValue.toLocaleString())}
+															</td>
+															<td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 500, color: '#1a1d29', fontFamily: '"SF Mono", "Monaco", monospace' }}>
+																{formatROI(position.realisedRoi)}
+															</td>
+															<td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 500, color: '#1a1d29', fontFamily: '"SF Mono", "Monaco", monospace' }}>
+																{formatPercentage(position.percentReceived)}
+															</td>
+															<td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 500, color: '#1a1d29', fontFamily: '"SF Mono", "Monaco", monospace' }}>
+																{formatPercentage(position.percentSold)}
+															</td>
+															<td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 500, color: '#059669', fontFamily: '"SF Mono", "Monaco", monospace' }}>
+																{position.percentageOfRealised.toFixed(1)}%
+															</td>
+														</tr>
+													);
+												})}
+											</tbody>
+										</table>
+									</div>
+								</>
+							);
+						})()}
+					</div>
+				</div>
+			)}
+
+			{/* Top 5 Biggest Positions - Exact same design as overview */}
+			{portfolio.summary && (
+				<div style={{ 
+					backgroundColor: '#ffffff',
+					border: '1px solid #e1e5e9',
+					borderRadius: '8px',
+					marginBottom: '40px',
+					boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+					overflow: 'hidden'
+				}}>
+					<div style={{ 
+						padding: '20px 24px', 
+						borderBottom: '1px solid #e1e5e9', 
+						backgroundColor: '#fafbfc'
+					}}>
+						<h3 style={{ 
+							fontSize: '16px', 
+							fontWeight: 600, 
+							color: '#1a1d29',
+							margin: '0 0 4px 0'
+						}}>
+							Top 5 Biggest Positions
+						</h3>
+						<p style={{ 
+							fontSize: '13px', 
+							color: '#6c7281', 
+							margin: 0,
+							fontWeight: 400
+						}}>
+							Largest investments by total value
+						</p>
+					</div>
+					
+					<div style={{ padding: '24px' }}>
+						{(() => {
+							// Calculate total portfolio value for individual portfolio
+							const totalPortfolioValue = parseFloat(portfolio.summary.totalValue?.replace(/[$,\s\u202F\u00A0â¯]/g, '') || '0');
+							const top5Positions = portfolio.investments
+								.map(inv => {
+									const overviewData = getOverviewDataForInvestment(inv.name);
+									return {
+										name: inv.name,
+										totalValue: parseFloat(inv.totalValue?.replace(/[$,\s\u202F\u00A0â¯]/g, '') || '0'),
+										buyPrice: overviewData.buyPrice,
+										currentPrice: overviewData.currentPrice,
+										avgSellPrice: overviewData.avgSellPrice
+									};
+								})
+								.filter(pos => pos.totalValue > 0)
+								.sort((a, b) => b.totalValue - a.totalValue)
+								.slice(0, 5)
+								.map(pos => ({
+									...pos,
+									percentage: totalPortfolioValue > 0 ? (pos.totalValue / totalPortfolioValue) * 100 : 0
+								}));
+							const totalTop5Value = top5Positions.reduce((sum, pos) => sum + pos.totalValue, 0);
+							const totalTop5Percentage = totalPortfolioValue > 0 ? (totalTop5Value / totalPortfolioValue) * 100 : 0;
+							
+							return (
+								<>
+									{/* Summary */}
+									<div style={{ 
+										display: 'flex', 
+										alignItems: 'center', 
+										gap: '40px', 
+										marginBottom: '32px',
+										padding: '20px',
+										backgroundColor: '#f8f9fa',
+										borderRadius: '6px'
+									}}>
+										<div>
+											<div style={{ 
+												fontSize: '12px', 
+												fontWeight: 500, 
+												color: '#6c7281', 
+												letterSpacing: '0.02em',
+												textTransform: 'uppercase',
+												marginBottom: '8px'
+											}}>
+												Combined Value
+											</div>
+											<div style={{ 
+												fontSize: '28px', 
+												fontWeight: 700, 
+												color: '#1a1d29',
+												fontFamily: '"SF Mono", "Monaco", monospace'
+											}}>
+												{formatTokensReceived('$' + totalTop5Value.toLocaleString())}
+											</div>
+										</div>
+										<div>
+											<div style={{ 
+												fontSize: '12px', 
+												fontWeight: 500, 
+												color: '#6c7281', 
+												letterSpacing: '0.02em',
+												textTransform: 'uppercase',
+												marginBottom: '8px'
+											}}>
+												% of Total Portfolio
+											</div>
+											<div style={{ 
+												fontSize: '28px', 
+												fontWeight: 700, 
+												color: '#059669',
+												fontFamily: '"SF Mono", "Monaco", monospace'
+											}}>
+												{totalTop5Percentage.toFixed(1)}%
+											</div>
+										</div>
+									</div>
+
+									{/* Table */}
+									<div style={{ 
+										border: '1px solid #e1e5e9',
+										borderRadius: '6px',
+										overflow: 'hidden'
+									}}>
+										<table style={{ 
+											width: '100%', 
+											borderCollapse: 'collapse',
+											fontSize: '13px',
+											fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+											tableLayout: 'fixed'
+										}}>
+											<thead>
+												<tr style={{ 
+													backgroundColor: '#f8f9fa',
+													borderBottom: '1px solid #e1e5e9'
+												}}>
+													<th style={{ 
+														textAlign: 'left', 
+														padding: '12px 16px', 
+														fontWeight: 500, 
+														fontSize: '11px', 
+														letterSpacing: '0.02em', 
+														textTransform: 'uppercase', 
+														color: '#6c7281',
+														width: '200px'
+													}}>
+														Name
+													</th>
+													<th style={{ 
+														textAlign: 'right', 
+														padding: '12px 16px', 
+														fontWeight: 500, 
+														fontSize: '11px', 
+														letterSpacing: '0.02em', 
+														textTransform: 'uppercase', 
+														color: '#6c7281',
+														width: '140px'
+													}}>
+														Total Value
+													</th>
+													<th style={{ 
+														textAlign: 'right', 
+														padding: '12px 16px', 
+														fontWeight: 500, 
+														fontSize: '11px', 
+														letterSpacing: '0.02em', 
+														textTransform: 'uppercase', 
+														color: '#6c7281',
+														width: '120px'
+													}}>
+														Buy Price
+													</th>
+													<th style={{ 
+														textAlign: 'right', 
+														padding: '12px 16px', 
+														fontWeight: 500, 
+														fontSize: '11px', 
+														letterSpacing: '0.02em', 
+														textTransform: 'uppercase', 
+														color: '#6c7281',
+														width: '120px'
+													}}>
+														Current Price
+													</th>
+													<th style={{ 
+														textAlign: 'right', 
+														padding: '12px 16px', 
+														fontWeight: 500, 
+														fontSize: '11px', 
+														letterSpacing: '0.02em', 
+														textTransform: 'uppercase', 
+														color: '#6c7281',
+														width: '100px'
+													}}>
+														Avg Sell Price
+													</th>
+													<th style={{ 
+														textAlign: 'right', 
+														padding: '12px 16px', 
+														fontWeight: 500, 
+														fontSize: '11px', 
+														letterSpacing: '0.02em', 
+														textTransform: 'uppercase', 
+														color: '#6c7281',
+														width: '140px'
+													}}>
+														% of Portfolio
+													</th>
+												</tr>
+											</thead>
+											<tbody>
+												{top5Positions.map((position, index) => (
+													<tr key={position.name} style={{ 
+														backgroundColor: index % 2 === 0 ? '#ffffff' : '#fafbfc',
+														borderBottom: index < top5Positions.length - 1 ? '1px solid #f1f3f4' : 'none'
+													}}>
+														<td style={{ 
+															padding: '12px 16px', 
+															fontWeight: 500, 
+															color: '#1a1d29' 
+														}}>
+															{position.name}
+														</td>
+														<td style={{ 
+															padding: '12px 16px', 
+															textAlign: 'right', 
+															fontWeight: 500, 
+															color: '#1a1d29',
+															fontFamily: '"SF Mono", "Monaco", monospace'
+														}}>
+															{formatTokensReceived('$' + position.totalValue.toLocaleString())}
+														</td>
+														<td style={{ 
+															padding: '12px 16px', 
+															textAlign: 'right', 
+															fontWeight: 400, 
+															color: '#6c7281',
+															fontFamily: '"SF Mono", "Monaco", monospace'
+														}}>
+															{position.buyPrice ? formatPrice(position.buyPrice) : '-'}
+														</td>
+														<td style={{ 
+															padding: '12px 16px', 
+															textAlign: 'right', 
+															fontWeight: 400, 
+															color: '#6c7281',
+															fontFamily: '"SF Mono", "Monaco", monospace'
+														}}>
+															{position.currentPrice ? formatPrice(position.currentPrice) : '-'}
+														</td>
+														<td style={{ 
+															padding: '12px 16px', 
+															textAlign: 'right', 
+															fontWeight: 400, 
+															color: '#6c7281',
+															fontFamily: '"SF Mono", "Monaco", monospace'
+														}}>
+															{position.avgSellPrice ? formatPrice(position.avgSellPrice) : '-'}
+														</td>
+														<td style={{ 
+															padding: '12px 16px', 
+															textAlign: 'right', 
+															fontWeight: 500, 
+															color: '#059669',
+															fontFamily: '"SF Mono", "Monaco", monospace'
+														}}>
+															{position.percentage.toFixed(1)}%
+														</td>
+													</tr>
+												))}
+											</tbody>
+										</table>
+									</div>
+								</>
+							);
+						})()}
+					</div>
+				</div>
+			)}
+
+
+			{/* Distributions to Investors */}
+			{portfolio.summary && (
+				<div style={{ 
+					backgroundColor: '#ffffff',
+					border: '1px solid #e1e5e9',
+					borderRadius: '8px',
+					marginBottom: '40px',
+					boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+					overflow: 'hidden'
+				}}>
+					<div style={{ 
+						padding: '20px 24px', 
+						borderBottom: '1px solid #e1e5e9', 
+						backgroundColor: '#fafbfc'
+					}}>
+						<h3 style={{ 
+							fontSize: '16px', 
+							fontWeight: 600, 
+							color: '#1a1d29',
+							margin: '0 0 4px 0'
+						}}>
+							Distributions to Investors
+						</h3>
+						<p style={{ 
+							fontSize: '13px', 
+							color: '#6c7281', 
+							margin: 0,
+							fontWeight: 400
+						}}>
+							Distribution performance and outstanding amounts
+						</p>
+					</div>
+					
+					<div style={{ padding: '24px' }}>
+						{(() => {
+							// Calculate Total Distributed using sumproduct of column C (totalInvested) and O (dpi)
+							let totalDistributed = 0;
+							portfolio.investments.forEach(inv => {
+								const totalInvested = parseFloat(inv.totalInvested?.replace(/[$,\s\u202F\u00A0â¯]/g, '') || '0');
+								const dpi = parseFloat(inv.dpi?.replace(/[x\s]/g, '') || '0');
+								totalDistributed += totalInvested * dpi;
+							});
+							
+							// Format DPI to 2 decimal places
+							const dpiValue = parseFloat(portfolio.summary.dpi?.replace(/[x\s]/g, '') || '0');
+							const formattedDPI = `${dpiValue.toFixed(2)}x`;
+							
+							// Parse outstanding distributions for summary
+							const outstandingUSDC = parseFloat(portfolio.summary.outstandingUSDC?.replace(/[^0-9.-]/g, '') || '0');
+							const outstandingETH = parseFloat(portfolio.summary.outstandingETH?.replace(/[^0-9.-]/g, '') || '0');
+							const outstandingSOL = parseFloat(portfolio.summary.outstandingSOL?.replace(/[^0-9.-]/g, '') || '0');
+							
+							// Get individual investments that meet thresholds
+							const getOutstandingInvestments = (currency: 'USDC' | 'ETH' | 'SOL') => {
+								const thresholds = { USDC: 20, ETH: 0.05, SOL: 0.1 };
+								
+								return portfolio.investments
+									.map(inv => {
+										let amount = 0;
+										if (currency === 'USDC') {
+											amount = parseFloat(inv.outstandingUSDC?.replace(/[^0-9.-]/g, '') || '0');
+										} else if (currency === 'ETH') {
+											amount = parseFloat(inv.outstandingETH?.replace(/[^0-9.-]/g, '') || '0');
+										} else if (currency === 'SOL') {
+											amount = parseFloat(inv.outstandingSOL?.replace(/[^0-9.-]/g, '') || '0');
+										}
+										return { name: inv.name, amount };
+									})
+									.filter(inv => inv.amount > thresholds[currency]) // Only show positive values above threshold
+									.sort((a, b) => b.amount - a.amount);
+							};
+							
+							const usdcInvestments = getOutstandingInvestments('USDC');
+							const ethInvestments = getOutstandingInvestments('ETH');
+							const solInvestments = getOutstandingInvestments('SOL');
+							
+							return (
+								<div>
+									{/* Main Metrics */}
+									<div style={{ 
+										display: 'grid', 
+										gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', 
+										gap: '24px',
+										marginBottom: '40px'
+									}}>
+										{/* DPI Score */}
+										<div style={{ 
+											padding: '24px',
+											backgroundColor: '#f8f9fa',
+											borderRadius: '8px',
+											border: '1px solid #e9ecef',
+											textAlign: 'center'
+										}}>
+											<div style={{ 
+												fontSize: '14px', 
+												fontWeight: 500, 
+												color: '#6c7281',
+												marginBottom: '12px',
+												textTransform: 'uppercase',
+												letterSpacing: '0.02em'
+											}}>
+												DPI (Distributed to Paid-In)
+											</div>
+											<div style={{ 
+												fontSize: '36px', 
+												fontWeight: 700, 
+												color: '#1a1d29',
+												fontFamily: '"SF Mono", "Monaco", monospace',
+												letterSpacing: '-0.02em',
+												marginBottom: '8px'
+											}}>
+												{formattedDPI}
+											</div>
+											<div style={{ 
+												fontSize: '12px', 
+												color: '#6c7281'
+											}}>
+												Cash distributions relative to capital invested
+											</div>
+										</div>
+
+										{/* Total Distributed */}
+										<div style={{ 
+											padding: '24px',
+											backgroundColor: '#f0f9ff',
+											borderRadius: '8px',
+											border: '1px solid #0ea5e9',
+											textAlign: 'center'
+										}}>
+											<div style={{ 
+												fontSize: '14px', 
+												fontWeight: 500, 
+												color: '#0369a1',
+												marginBottom: '12px',
+												textTransform: 'uppercase',
+												letterSpacing: '0.02em'
+											}}>
+												Total Distributed
+											</div>
+											<div style={{ 
+												fontSize: '36px', 
+												fontWeight: 700, 
+												color: '#0c4a6e',
+												fontFamily: '"SF Mono", "Monaco", monospace',
+												letterSpacing: '-0.02em',
+												marginBottom: '8px'
+											}}>
+												${Math.round(totalDistributed).toLocaleString()}
+											</div>
+											<div style={{ 
+												fontSize: '12px', 
+												color: '#0369a1'
+											}}>
+												Total cash distributed to investors
+											</div>
+										</div>
+									</div>
+
+									{/* Outstanding Distributions */}
+									<div>
+										<h4 style={{ 
+											fontSize: '16px', 
+											fontWeight: 600, 
+											color: '#1a1d29',
+											margin: '0 0 24px 0',
+											textTransform: 'uppercase',
+											letterSpacing: '0.02em'
+										}}>
+											Outstanding Distributions
+										</h4>
+										
+										<div style={{ 
+											display: 'grid', 
+											gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', 
+											gap: '24px'
+										}}>
+											{/* USDC Section */}
+											<div style={{ 
+												backgroundColor: '#ffffff',
+												border: '1px solid #e1e5e9',
+												borderRadius: '8px',
+												overflow: 'hidden'
+											}}>
+												<div style={{ 
+													padding: '16px 20px',
+													backgroundColor: '#f8f9fa',
+													borderBottom: '1px solid #e1e5e9'
+												}}>
+													<div style={{ 
+														display: 'flex', 
+														justifyContent: 'space-between', 
+														alignItems: 'center'
+													}}>
+														<div style={{ 
+															fontSize: '14px', 
+															fontWeight: 600, 
+															color: '#1a1d29',
+															textTransform: 'uppercase',
+															letterSpacing: '0.02em'
+														}}>
+															USDC
+														</div>
+														<div style={{ 
+															fontSize: '16px', 
+															fontWeight: 600, 
+															color: '#059669',
+															fontFamily: '"SF Mono", "Monaco", monospace'
+														}}>
+															{outstandingUSDC >= 20 ? Math.max(0, outstandingUSDC).toLocaleString() : '0'} USDC
+														</div>
+													</div>
+												</div>
+												<div style={{ padding: '16px 20px' }}>
+													{usdcInvestments.length > 0 ? (
+														<div style={{ fontSize: '13px', color: '#6c7281' }}>
+															{usdcInvestments.map((inv, idx) => (
+																<div key={inv.name} style={{ 
+																	display: 'flex', 
+																	justifyContent: 'space-between', 
+																	marginBottom: idx < usdcInvestments.length - 1 ? '8px' : '0'
+																}}>
+																	<span>{inv.name}</span>
+																	<span style={{ 
+																		fontFamily: '"SF Mono", "Monaco", monospace',
+																		color: '#059669'
+																	}}>
+																		{Math.round(inv.amount).toLocaleString()}
+																	</span>
+																</div>
+															))}
+														</div>
+													) : (
+														<div style={{ 
+															fontSize: '13px', 
+															color: '#9ca3af', 
+															fontStyle: 'italic',
+															textAlign: 'center'
+														}}>
+															No significant outstanding amounts
+														</div>
+													)}
+												</div>
+											</div>
+
+											{/* ETH Section */}
+											<div style={{ 
+												backgroundColor: '#ffffff',
+												border: '1px solid #e1e5e9',
+												borderRadius: '8px',
+												overflow: 'hidden'
+											}}>
+												<div style={{ 
+													padding: '16px 20px',
+													backgroundColor: '#f8f9fa',
+													borderBottom: '1px solid #e1e5e9'
+												}}>
+													<div style={{ 
+														display: 'flex', 
+														justifyContent: 'space-between', 
+														alignItems: 'center'
+													}}>
+														<div style={{ 
+															fontSize: '14px', 
+															fontWeight: 600, 
+															color: '#1a1d29',
+															textTransform: 'uppercase',
+															letterSpacing: '0.02em'
+														}}>
+															ETH
+														</div>
+														<div style={{ 
+															fontSize: '16px', 
+															fontWeight: 600, 
+															color: '#059669',
+															fontFamily: '"SF Mono", "Monaco", monospace'
+														}}>
+															{Math.abs(outstandingETH).toFixed(4)} ETH
+														</div>
+													</div>
+												</div>
+												<div style={{ padding: '16px 20px' }}>
+													{ethInvestments.length > 0 ? (
+														<div style={{ fontSize: '13px', color: '#6c7281' }}>
+															{ethInvestments.map((inv, idx) => (
+																<div key={inv.name} style={{ 
+																	display: 'flex', 
+																	justifyContent: 'space-between', 
+																	marginBottom: idx < ethInvestments.length - 1 ? '8px' : '0'
+																}}>
+																	<span>{inv.name}</span>
+																	<span style={{ 
+																		fontFamily: '"SF Mono", "Monaco", monospace',
+																		color: '#059669'
+																	}}>
+																		{inv.amount.toFixed(4)}
+																	</span>
+																</div>
+															))}
+														</div>
+													) : (
+														<div style={{ 
+															fontSize: '13px', 
+															color: '#9ca3af', 
+															fontStyle: 'italic',
+															textAlign: 'center'
+														}}>
+															No significant outstanding amounts
+														</div>
+													)}
+												</div>
+											</div>
+
+											{/* SOL Section */}
+											<div style={{ 
+												backgroundColor: '#ffffff',
+												border: '1px solid #e1e5e9',
+												borderRadius: '8px',
+												overflow: 'hidden'
+											}}>
+												<div style={{ 
+													padding: '16px 20px',
+													backgroundColor: '#f8f9fa',
+													borderBottom: '1px solid #e1e5e9'
+												}}>
+													<div style={{ 
+														display: 'flex', 
+														justifyContent: 'space-between', 
+														alignItems: 'center'
+													}}>
+														<div style={{ 
+															fontSize: '14px', 
+															fontWeight: 600, 
+															color: '#1a1d29',
+															textTransform: 'uppercase',
+															letterSpacing: '0.02em'
+														}}>
+															SOL
+														</div>
+														<div style={{ 
+															fontSize: '16px', 
+															fontWeight: 600, 
+															color: '#059669',
+															fontFamily: '"SF Mono", "Monaco", monospace'
+														}}>
+															{Math.abs(outstandingSOL).toFixed(2)} SOL
+														</div>
+													</div>
+												</div>
+												<div style={{ padding: '16px 20px' }}>
+													{solInvestments.length > 0 ? (
+														<div style={{ fontSize: '13px', color: '#6c7281' }}>
+															{solInvestments.map((inv, idx) => (
+																<div key={inv.name} style={{ 
+																	display: 'flex', 
+																	justifyContent: 'space-between', 
+																	marginBottom: idx < solInvestments.length - 1 ? '8px' : '0'
+																}}>
+																	<span>{inv.name}</span>
+																	<span style={{ 
+																		fontFamily: '"SF Mono", "Monaco", monospace',
+																		color: '#059669'
+																	}}>
+																		{inv.amount.toFixed(2)}
+																	</span>
+																</div>
+															))}
+														</div>
+													) : (
+														<div style={{ 
+															fontSize: '13px', 
+															color: '#9ca3af', 
+															fontStyle: 'italic',
+															textAlign: 'center'
+														}}>
+															No significant outstanding amounts
+														</div>
+													)}
+												</div>
+											</div>
+										</div>
+									</div>
+								</div>
+							);
+						})()}
+					</div>
+				</div>
+			)}
+
+			{/* Token Unlock Schedule for Individual Portfolio */}
+			{overviewInvestments && data?.vestingChart && data.vestingChart.length > 0 && (
+				(() => {
+					// Calculate proportional vesting data based on share percentages
+					const proportionalVestingData = data.vestingChart.map((monthData: any) => {
+						const proportionalMonth = { month: monthData.month };
+						
+						// For each project, calculate the proportional amount based on portfolio share (excluding already vested projects)
+						['Tars', 'Heurist', 'Humanity', 'Giza Seed', 'Giza Legion', 'Creatorbid'].forEach(projectName => {
+							const totalAmount = monthData[projectName as keyof typeof monthData] as number || 0;
+							
+							// Handle name mapping for projects where sheet names differ from chart names
+							let sheetProjectName = projectName;
+							if (projectName === 'Creatorbid') {
+								sheetProjectName = 'Creator Bid';
+							} else if (projectName === 'Tars') {
+								sheetProjectName = 'Tars AI';
+							}
+							
+							// Find the investment in this individual portfolio to get the share percentage
+							const portfolioInvestment = portfolio.investments.find(inv => inv.name === sheetProjectName);
+							if (portfolioInvestment && portfolioInvestment.share) {
+								// Parse share percentage (e.g., "60%" -> 0.6)
+								const sharePercent = parseFloat(portfolioInvestment.share.replace('%', '')) / 100;
+								const proportionalAmount = totalAmount * sharePercent * 100;
+								proportionalMonth[projectName as keyof typeof proportionalMonth] = proportionalAmount;
+								
+								// Debug logging for all projects to see the issue
+								console.log(`DEBUG: ${portfolio.name} - ${projectName}: total=${totalAmount}, share=${portfolioInvestment.share} (${sharePercent}), result=${proportionalAmount}`);
+							} else {
+								proportionalMonth[projectName as keyof typeof proportionalMonth] = 0;
+								
+								// Debug logging for missing investments
+								if (projectName === 'Giza Legion') {
+									console.log(`DEBUG: ${portfolio.name} - ${projectName}: NOT FOUND in portfolio investments`);
+								}
+							}
+						});
+						
+						return proportionalMonth;
+					});
+					
+					// Only show the chart if there's meaningful data (excluding already vested projects)
+					const hasData = proportionalVestingData.some((month: any) => 
+						['Tars', 'Heurist', 'Humanity', 'Giza Seed', 'Giza Legion', 'Creatorbid'].some(project => 
+							(month[project as keyof typeof month] as number || 0) > 0
+						)
+					);
+					
+					return hasData ? <VestingChart data={proportionalVestingData} /> : null;
+				})()
 			)}
 
 			{/* Individual Portfolio Table */}
@@ -1856,7 +3240,13 @@ function IndividualPortfolioDashboard({
 						margin: 0,
 						fontWeight: 400
 					}}>
-						Detailed performance metrics for {portfolio.investments.length} investments
+						Detailed performance metrics for {(() => {
+						// Subtract 1 for specific portfolios: Zohair, Iaad, Bahman, Matthias
+						const portfoliosToAdjust = ['zohair', 'iaad', 'mikado', 'bahman', 'matthias'];
+						const portfolioKey = portfolio.name.toLowerCase().replace(' portfolio', '');
+						const baseCount = portfolio.investments.length;
+						return portfoliosToAdjust.includes(portfolioKey) ? baseCount - 1 : baseCount;
+					})()} investments
 					</p>
 				</div>
 				<div style={{ overflowX: 'auto' }}>
@@ -1872,8 +3262,9 @@ function IndividualPortfolioDashboard({
 								backgroundColor: '#f8f9fa',
 								borderBottom: '1px solid #e1e5e9'
 							}}>
-								{INDIVIDUAL_COLUMNS.map(col => {
+								{INDIVIDUAL_COLUMNS.map((col, colIndex) => {
 									const active = sortKey === col.key;
+									const isFirstColumn = colIndex === 0;
 									return (
 										<th
 											key={col.key}
@@ -1888,10 +3279,14 @@ function IndividualPortfolioDashboard({
 												color: active ? '#2563eb' : '#6c7281',
 												cursor: 'pointer',
 												userSelect: 'none',
-												background: active ? '#f0f4ff' : 'transparent',
+												background: active ? '#f0f4ff' : (isFirstColumn ? '#f8f9fa' : 'transparent'),
 												borderBottom: active ? '2px solid #2563eb' : '2px solid transparent',
 												transition: 'all 0.15s ease',
-												position: 'relative'
+												position: isFirstColumn ? 'sticky' : 'relative',
+												left: isFirstColumn ? '0' : 'auto',
+												zIndex: isFirstColumn ? 20 : 1,
+												minWidth: isFirstColumn ? '200px' : 'auto',
+												maxWidth: isFirstColumn ? '200px' : 'auto'
 											}}
 											onMouseEnter={(e) => {
 												if (!active) {
@@ -1935,20 +3330,39 @@ function IndividualPortfolioDashboard({
 										}}
 										onMouseEnter={(e) => {
 											e.currentTarget.style.background = '#f8f9fa';
+											// Update sticky column background on hover
+											const stickyCell = e.currentTarget.querySelector('td:first-child') as HTMLElement;
+											if (stickyCell) {
+												stickyCell.style.backgroundColor = '#f8f9fa';
+											}
 										}}
 										onMouseLeave={(e) => {
 											e.currentTarget.style.background = rowBg;
+											// Reset sticky column background
+											const stickyCell = e.currentTarget.querySelector('td:first-child') as HTMLElement;
+											if (stickyCell) {
+												stickyCell.style.backgroundColor = rowBg;
+											}
 										}}
 									>
 										<td style={{ 
 											padding: '12px 16px', 
 											fontWeight: 500,
-											borderRight: '1px solid #f1f3f4'
+											borderRight: '1px solid #f1f3f4',
+											position: 'sticky',
+											left: '0',
+											zIndex: 15,
+											backgroundColor: rowBg,
+											minWidth: '200px',
+											maxWidth: '200px'
 										}}>
 											<div style={{ 
 												color: '#1a1d29', 
 												fontWeight: 500,
-												fontSize: '13px'
+												fontSize: '13px',
+												whiteSpace: 'nowrap',
+												overflow: 'hidden',
+												textOverflow: 'ellipsis'
 											}}>
 												{investment.name}
 											</div>
@@ -1962,8 +3376,19 @@ function IndividualPortfolioDashboard({
 												formattedValue = formatTokensReceived(value as string);
 											} else if (col.key === 'share') {
 												formattedValue = formatPercentage(value as string);
-											} else if (col.key === 'roi' || col.key === 'realisedRoi') {
+											} else if (col.key === 'unrealisedRoi' || col.key === 'realisedRoi') {
 												formattedValue = formatROI(value as string);
+											} else if (col.key === 'outstandingUSDC') {
+												formattedValue = formatOutstandingDistribution(value as string, 'USDC');
+											} else if (col.key === 'outstandingETH') {
+												formattedValue = formatOutstandingDistribution(value as string, 'ETH');
+											} else if (col.key === 'outstandingSOL') {
+												formattedValue = formatOutstandingDistribution(value as string, 'SOL');
+											} else if (col.key === 'percentReceived' || col.key === 'percentSold') {
+												// Get the data from overview investments since individual portfolios don't have this data
+												const overviewData = getOverviewDataForInvestment(investment.name);
+												const percentValue = col.key === 'percentReceived' ? overviewData.percentReceived : overviewData.percentSold;
+												formattedValue = formatPercentage(percentValue);
 											}
 											
 											// Color coding for financial metrics
@@ -1974,7 +3399,7 @@ function IndividualPortfolioDashboard({
 												} else if (parseFloat(formattedValue.replace(/[^0-9.-]/g, '')) > 0) {
 													cellColor = '#059669'; // Green for gains
 												}
-											} else if (col.key === 'roi' || col.key === 'realisedRoi') {
+											} else if (col.key === 'unrealisedRoi' || col.key === 'realisedRoi') {
 												const roiNumber = parseFloat(formattedValue.replace(/[^0-9.-]/g, ''));
 												if (!isNaN(roiNumber)) {
 													if (roiNumber < 1) {
@@ -2031,7 +3456,7 @@ function IndividualPortfolioDashboard({
 }
 
 export default function HomePage() {
-	const { data, isLoading, error } = useSWR<Portfolio>('/api/portfolio', fetcher, { refreshInterval: 60_000 });
+	const { data, isLoading, error, mutate } = useSWR<Portfolio>('/api/portfolio', fetcher, { refreshInterval: 60_000 });
 
 	// Debug: Log individual portfolios data
 	if (data?.individualPortfolios) {
@@ -2045,6 +3470,39 @@ export default function HomePage() {
 	const [sortKey, setSortKey] = useState<ColKey>('totalValue');
 	const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc');
 	const [selectedPortfolio, setSelectedPortfolio] = useState<string>('fund'); // 'fund' or portfolio manager name
+	const [isRefreshing, setIsRefreshing] = useState(false);
+	const [lastRefreshTime, setLastRefreshTime] = useState<Date | null>(null);
+
+	// Refresh function to call the refresh API
+	const handleRefresh = async () => {
+		setIsRefreshing(true);
+		try {
+			const response = await fetch('/api/refresh', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+			});
+			
+			const result = await response.json();
+			
+			if (result.success) {
+				// Trigger SWR to refetch the data
+				mutate();
+				// Update the last refresh timestamp
+				setLastRefreshTime(new Date());
+				// Show success message (you could add a toast notification here)
+				console.log('Prices refreshed successfully');
+			} else {
+				console.error('Refresh failed:', result.error);
+				// You could show an error message to the user here
+			}
+		} catch (error) {
+			console.error('Refresh error:', error);
+		} finally {
+			setIsRefreshing(false);
+		}
+	};
 
 	const o: Overview = data?.overview ?? {
 		totalInvested: '-', totalValue: '-', realisedValue: '-', realisedPnL: '-',
@@ -2111,13 +3569,15 @@ export default function HomePage() {
 		{ value: 'babak', label: 'Babak Portfolio' },
 		{ value: 'bahman', label: 'Bahman Portfolio' },
 		{ value: 'victor', label: 'Victor Portfolio' },
-		{ value: 'karl', label: 'Karl Portfolio' }
+		{ value: 'karl', label: 'Karl Portfolio' },
+		{ value: 'analytics', label: 'Analytics*' }
 	];
 
 	if (isLoading) return <div style={{ padding: 24 }}>Loading…</div>;
 	if (error) return <div style={{ padding: 24, color: 'crimson' }}>Failed to load.</div>;
 
 	return (
+		<>
 		<div style={{ 
 			minHeight: '100vh',
 			backgroundColor: '#fafbfc',
@@ -2147,14 +3607,76 @@ export default function HomePage() {
 								margin: '4px 0 0 0',
 								fontWeight: 400
 							}}>
-								Portfolio Tracker • {o?.investmentsCount || 0} Active Investments
+								Portfolio Tracker • {listedProjects?.totalInvestments || 0} Total Investments
 							</p>
 						</div>
 						<div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+							{/* Refresh Button */}
+							<button
+								onClick={handleRefresh}
+								disabled={isRefreshing}
+								style={{
+									padding: '8px 16px',
+									fontSize: '14px',
+									fontWeight: 500,
+									color: isRefreshing ? '#6c7281' : '#ffffff',
+									backgroundColor: isRefreshing ? '#e1e5e9' : '#059669',
+									border: 'none',
+									borderRadius: '6px',
+									cursor: isRefreshing ? 'not-allowed' : 'pointer',
+									display: 'flex',
+									alignItems: 'center',
+									gap: '8px',
+									transition: 'all 0.2s ease',
+									minWidth: '100px',
+									justifyContent: 'center'
+								}}
+								onMouseEnter={(e) => {
+									if (!isRefreshing) {
+										e.currentTarget.style.backgroundColor = '#047857';
+									}
+								}}
+								onMouseLeave={(e) => {
+									if (!isRefreshing) {
+										e.currentTarget.style.backgroundColor = '#059669';
+									}
+								}}
+							>
+								{isRefreshing ? (
+									<>
+										<div style={{
+											width: '14px',
+											height: '14px',
+											border: '2px solid #6c7281',
+											borderTop: '2px solid transparent',
+											borderRadius: '50%',
+											animation: 'spin 1s linear infinite'
+										}} />
+										Refreshing...
+									</>
+								) : (
+									<>
+										<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+											<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+											<path d="M21 3v5h-5" />
+											<path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+											<path d="M3 21v-5h5" />
+										</svg>
+										Refresh
+									</>
+								)}
+							</button>
+
 							{/* Portfolio Selector */}
 							<select 
 								value={selectedPortfolio}
-								onChange={(e) => setSelectedPortfolio(e.target.value)}
+								onChange={(e) => {
+									if (e.target.value === 'analytics') {
+										window.location.href = '/analytics';
+									} else {
+										setSelectedPortfolio(e.target.value);
+									}
+								}}
 								style={{
 									padding: '8px 12px',
 									fontSize: '14px',
@@ -2182,13 +3704,15 @@ export default function HomePage() {
 							}}>
 								<div>Last Updated</div>
 								<div style={{ fontWeight: 500, color: '#1a1d29' }}>
-									{new Date().toLocaleDateString('en-US', { 
+									{lastRefreshTime ? 
+										lastRefreshTime.toLocaleDateString('en-US', { 
 										month: 'short', 
 										day: 'numeric', 
 										year: 'numeric',
 										hour: '2-digit',
 										minute: '2-digit'
-									})}
+										}) : 'Never refreshed'
+									}
 								</div>
 							</div>
 							<div style={{
@@ -2251,12 +3775,6 @@ export default function HomePage() {
 							value={formatTokensReceived(o.unrealisedValue)} 
 							trend="neutral"
 							subtitle="Current market valuation"
-						/>
-						<Stat 
-							label="Liquid Value" 
-							value={formatTokensReceived(o.liquidValue)} 
-							trend="neutral"
-							subtitle="Immediately tradeable assets"
 						/>
 					</div>
 					
@@ -2339,94 +3857,6 @@ export default function HomePage() {
 						/>
 					</div>
 					
-					{/* Compact Liquid Value Section */}
-					<div style={{ 
-						backgroundColor: '#ffffff',
-						border: '1px solid #e1e5e9',
-						borderRadius: '8px',
-						padding: '20px',
-						boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)'
-					}}>
-						<div style={{ 
-							display: 'flex',
-							alignItems: 'flex-start',
-							gap: '24px'
-						}}>
-							{/* Left side: Title and Total */}
-							<div style={{ 
-								flex: '0 0 180px'
-							}}>
-								<div style={{ marginBottom: 12 }}>
-									<div style={{ 
-										fontSize: '16px', 
-										fontWeight: 600, 
-										color: '#1a1d29',
-										letterSpacing: '-0.01em'
-									}}>
-										Liquid Value
-									</div>
-								</div>
-								<div style={{ 
-									fontSize: '28px', 
-									fontWeight: 700, 
-									color: '#1a1d29',
-									lineHeight: 1,
-									fontFamily: '"SF Mono", "Monaco", "Inconsolata", "Roboto Mono", monospace'
-								}}>
-									{formatTokensReceived(o.liquidValue)}
-								</div>
-							</div>
-							
-							{/* Right side: Single row liquid positions */}
-							<div style={{ 
-								flex: '1 1 auto',
-								paddingTop: '0px'
-							}}>
-								<div style={{ 
-									fontSize: '13px', 
-									color: '#6c7281',
-									fontWeight: 400,
-									marginBottom: '12px'
-								}}>
-									Top 4 liquid positions
-								</div>
-								<div style={{ 
-									display: 'grid',
-									gridTemplateColumns: 'repeat(4, 1fr)',
-									gap: '20px',
-									alignItems: 'start'
-								}}>
-									{getTopLiquidPositions(items).split(' • ').map((position, index) => {
-										const [name, amount] = position.split(': ');
-										return (
-											<div key={index} style={{
-												padding: '8px 0',
-												borderBottom: '1px solid #f1f5f9'
-											}}>
-												<div style={{
-													fontSize: '12px',
-													fontWeight: 600,
-													color: '#374151',
-													marginBottom: '3px',
-													letterSpacing: '-0.01em'
-												}}>
-													{name}
-												</div>
-												<div style={{
-													fontSize: '14px',
-													fontWeight: 700,
-													color: '#1a1d29',
-													fontFamily: '"SF Mono", "Monaco", monospace'
-												}}>
-													{amount}
-												</div>
-											</div>
-										);
-									})}
-								</div>
-							</div>
-						</div>
-					</div>
 				</div>
 
 				{/* Upcoming Token Unlocks */}
@@ -2435,6 +3865,601 @@ export default function HomePage() {
 						backgroundColor: '#ffffff',
 						border: '1px solid #e1e5e9',
 						borderRadius: '4px',
+						marginBottom: '40px',
+						boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+						overflow: 'hidden'
+					}}>
+						<div style={{ 
+							padding: '20px 24px', 
+							borderBottom: '1px solid #e1e5e9', 
+							backgroundColor: '#fafbfc'
+						}}>
+							<h3 style={{ 
+										fontSize: '16px', 
+										fontWeight: 600, 
+										color: '#1a1d29',
+								margin: '0 0 4px 0'
+									}}>
+										Liquid Value
+							</h3>
+							<p style={{ 
+								fontSize: '13px', 
+								color: '#6c7281', 
+								margin: 0,
+								fontWeight: 400
+							}}>
+								Immediately tradeable assets
+							</p>
+									</div>
+						
+					<div style={{ padding: '24px' }}>
+						<div style={{ display: 'flex', alignItems: 'center', gap: '32px', flexWrap: 'wrap' }}>
+							{/* Total Liquid Value - Compact */}
+							<div style={{ flex: '0 0 auto' }}>
+								<div style={{ 
+									fontSize: '12px', 
+									fontWeight: 500, 
+									color: '#6c7281', 
+									letterSpacing: '0.02em',
+									textTransform: 'uppercase',
+									marginBottom: '6px'
+								}}>
+									Total Liquid Value
+								</div>
+								<div style={{ 
+									fontSize: '32px', 
+									fontWeight: 700, 
+									color: '#1a1d29',
+									lineHeight: 1,
+									fontFamily: '"SF Mono", "Monaco", monospace'
+								}}>
+									{formatTokensReceived(o.liquidValue)}
+								</div>
+							</div>
+							
+							{/* Top 5 Liquid Positions - Horizontal List */}
+							<div style={{ flex: '1 1 auto', minWidth: '400px', paddingLeft: '40px' }}>
+							<div style={{ 
+									fontSize: '12px', 
+									fontWeight: 500, 
+									color: '#6c7281',
+									letterSpacing: '0.02em',
+									textTransform: 'uppercase',
+									marginBottom: '12px'
+								}}>
+									Top 5 Liquid Positions
+								</div>
+								<div style={{ 
+									display: 'flex',
+									gap: '16px',
+									flexWrap: 'wrap'
+								}}>
+									{(() => {
+										const liquidPositions = items
+											.map(inv => ({
+												name: inv.name,
+												liquidValue: parseFloat(inv.liquidValue?.replace(/[$,\s\u202F\u00A0â¯]/g, '') || '0')
+											}))
+											.filter(pos => pos.liquidValue > 0)
+											.sort((a, b) => b.liquidValue - a.liquidValue)
+											.slice(0, 5);
+										
+										return liquidPositions.map((position, index) => (
+											<div key={position.name} style={{
+												padding: '12px 16px',
+												backgroundColor: '#f8f9fa',
+												border: '1px solid #e1e5e9',
+												borderRadius: '6px',
+												minWidth: '140px',
+												position: 'relative'
+											}}>
+												{/* Ranking Badge */}
+												<div style={{
+													position: 'absolute',
+													top: '6px',
+													right: '6px',
+													width: '18px',
+													height: '18px',
+													backgroundColor: index === 0 ? '#059669' : '#6c7281',
+													color: 'white',
+													borderRadius: '50%',
+													display: 'flex',
+													alignItems: 'center',
+													justifyContent: 'center',
+													fontSize: '10px',
+													fontWeight: 700
+												}}>
+													{index + 1}
+												</div>
+												
+												<div style={{
+													fontSize: '12px',
+													fontWeight: 600,
+													color: '#374151',
+													marginBottom: '4px',
+													letterSpacing: '-0.01em',
+													lineHeight: '1.2',
+													paddingRight: '20px'
+												}}>
+													{position.name}
+												</div>
+												<div style={{
+													fontSize: '14px',
+													fontWeight: 700,
+													color: '#059669',
+													fontFamily: '"SF Mono", "Monaco", monospace',
+													letterSpacing: '-0.01em'
+												}}>
+													{formatTokensReceived('$' + position.liquidValue.toLocaleString())}
+												</div>
+											</div>
+										));
+									})()}
+								</div>
+							</div>
+						</div>
+					</div>
+					</div>
+				)}
+
+				{/* Top 5 Realised Positions */}
+				<div style={{ 
+					backgroundColor: '#ffffff',
+					border: '1px solid #e1e5e9',
+					borderRadius: '8px',
+					marginBottom: '40px',
+					boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+					overflow: 'hidden'
+				}}>
+					<div style={{ 
+						padding: '20px 24px', 
+						borderBottom: '1px solid #e1e5e9', 
+						backgroundColor: '#fafbfc'
+					}}>
+						<h3 style={{ 
+							fontSize: '16px', 
+							fontWeight: 600, 
+							color: '#1a1d29',
+							margin: '0 0 4px 0'
+						}}>
+							Top 5 Realised Positions
+						</h3>
+						<p style={{ 
+							fontSize: '13px', 
+							color: '#6c7281', 
+							margin: 0,
+							fontWeight: 400
+						}}>
+							Largest exits by realised value
+						</p>
+					</div>
+					
+					<div style={{ padding: '24px' }}>
+						{(() => {
+							// Parse the total realised value correctly from the formatted string
+							const totalRealisedValue = parseFloat(o.realisedValue?.replace(/[$,\s\u202F\u00A0â¯]/g, '') || '0');
+							const top5RealisedPositions = getTop5RealisedPositions(items, totalRealisedValue);
+							const totalTop5RealisedValue = top5RealisedPositions.reduce((sum, pos) => sum + pos.realisedValue, 0);
+							const totalTop5RealisedPercentage = totalRealisedValue > 0 ? (totalTop5RealisedValue / totalRealisedValue) * 100 : 0;
+							
+							return (
+								<>
+									{/* Summary */}
+									<div style={{ 
+										display: 'flex', 
+										alignItems: 'center', 
+										gap: '40px', 
+										marginBottom: '32px',
+										padding: '20px',
+										backgroundColor: '#f8f9fa',
+										borderRadius: '6px'
+									}}>
+										<div>
+											<div style={{ 
+												fontSize: '12px', 
+												fontWeight: 500, 
+												color: '#6c7281', 
+												letterSpacing: '0.02em',
+												textTransform: 'uppercase',
+												marginBottom: '8px'
+											}}>
+												Combined Value
+											</div>
+											<div style={{ 
+												fontSize: '28px', 
+													fontWeight: 700,
+													color: '#1a1d29',
+													fontFamily: '"SF Mono", "Monaco", monospace'
+												}}>
+												{formatTokensReceived('$' + totalTop5RealisedValue.toLocaleString())}
+												</div>
+											</div>
+										<div>
+											<div style={{ 
+												fontSize: '12px', 
+												fontWeight: 500, 
+												color: '#6c7281', 
+												letterSpacing: '0.02em',
+												textTransform: 'uppercase',
+												marginBottom: '8px'
+											}}>
+												% of Total Realised
+											</div>
+											<div style={{ 
+												fontSize: '28px', 
+												fontWeight: 700, 
+												color: '#059669',
+												fontFamily: '"SF Mono", "Monaco", monospace'
+											}}>
+												{totalTop5RealisedPercentage.toFixed(1)}%
+											</div>
+										</div>
+									</div>
+
+									{/* Table */}
+									<div style={{ overflowX: 'auto' }}>
+										<table style={{ 
+											width: '100%', 
+											borderCollapse: 'collapse', 
+											fontSize: '13px',
+											fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+											tableLayout: 'fixed'
+										}}>
+											<thead>
+												<tr style={{ 
+													backgroundColor: '#f8f9fa',
+													borderBottom: '1px solid #e1e5e9'
+												}}>
+													<th style={{ 
+														textAlign: 'left', 
+														padding: '12px 16px', 
+														fontWeight: 500, 
+														fontSize: '11px', 
+														letterSpacing: '0.02em', 
+														textTransform: 'uppercase', 
+														color: '#6c7281',
+														position: 'sticky',
+														left: '0',
+														zIndex: 10,
+														backgroundColor: '#f8f9fa',
+														width: '200px'
+													}}>
+														Name
+													</th>
+													<th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 500, fontSize: '11px', letterSpacing: '0.02em', textTransform: 'uppercase', color: '#6c7281', width: '140px' }}>Realised Value</th>
+													<th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 500, fontSize: '11px', letterSpacing: '0.02em', textTransform: 'uppercase', color: '#6c7281', width: '120px' }}>Realised ROI</th>
+													<th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 500, fontSize: '11px', letterSpacing: '0.02em', textTransform: 'uppercase', color: '#6c7281', width: '120px' }}>% Received</th>
+													<th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 500, fontSize: '11px', letterSpacing: '0.02em', textTransform: 'uppercase', color: '#6c7281', width: '100px' }}>% Sold</th>
+													<th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 500, fontSize: '11px', letterSpacing: '0.02em', textTransform: 'uppercase', color: '#6c7281', width: '140px' }}>% of Realised Value</th>
+												</tr>
+											</thead>
+											<tbody>
+												{top5RealisedPositions.map((position, index) => {
+													const isEven = index % 2 === 0;
+													const rowBg = isEven ? '#ffffff' : '#fafbfc';
+													
+													return (
+														<tr 
+															key={position.name}
+															style={{
+																background: rowBg,
+																borderBottom: index < top5RealisedPositions.length - 1 ? '1px solid #f1f3f4' : 'none'
+															}}
+														>
+															<td style={{ 
+																padding: '12px 16px', 
+																fontWeight: 500,
+																position: 'sticky',
+																left: '0',
+																zIndex: 5,
+																backgroundColor: rowBg,
+																minWidth: '200px',
+																maxWidth: '200px',
+																whiteSpace: 'nowrap',
+																overflow: 'hidden',
+																textOverflow: 'ellipsis'
+															}}>
+																<div style={{ 
+																	color: '#1a1d29', 
+																	fontWeight: 500,
+																	fontSize: '13px'
+																}}>
+																	{position.name}
+																</div>
+															</td>
+															<td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 500, color: '#1a1d29', fontFamily: '"SF Mono", "Monaco", monospace' }}>
+																{formatTokensReceived('$' + position.realisedValue.toLocaleString())}
+															</td>
+															<td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 500, color: '#1a1d29', fontFamily: '"SF Mono", "Monaco", monospace' }}>
+																{formatROI(position.realisedRoi)}
+															</td>
+															<td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 500, color: '#1a1d29', fontFamily: '"SF Mono", "Monaco", monospace' }}>
+																{formatPercentage(position.percentReceived)}
+															</td>
+															<td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 500, color: '#1a1d29', fontFamily: '"SF Mono", "Monaco", monospace' }}>
+																{formatPercentage(position.percentSold)}
+															</td>
+															<td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 500, color: '#059669', fontFamily: '"SF Mono", "Monaco", monospace' }}>
+																{position.percentageOfRealised.toFixed(1)}%
+															</td>
+														</tr>
+										);
+									})}
+											</tbody>
+										</table>
+								</div>
+								</>
+							);
+						})()}
+							</div>
+						</div>
+
+				{/* Top 5 Biggest Positions */}
+				<div style={{ 
+					backgroundColor: '#ffffff',
+					border: '1px solid #e1e5e9',
+					borderRadius: '8px',
+					marginBottom: '40px',
+					boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+					overflow: 'hidden'
+				}}>
+					<div style={{ 
+						padding: '20px 24px', 
+						borderBottom: '1px solid #e1e5e9', 
+						backgroundColor: '#fafbfc'
+					}}>
+						<h3 style={{ 
+							fontSize: '16px', 
+							fontWeight: 600, 
+							color: '#1a1d29',
+							margin: '0 0 4px 0'
+						}}>
+							Top 5 Biggest Positions
+						</h3>
+						<p style={{ 
+							fontSize: '13px', 
+							color: '#6c7281', 
+							margin: 0,
+							fontWeight: 400
+						}}>
+							Largest investments by total value
+						</p>
+					</div>
+					
+					<div style={{ padding: '24px' }}>
+						{(() => {
+							// Parse the total portfolio value correctly from the formatted string
+							// Handle Unicode characters like â¯ that appear in place of commas
+							const totalPortfolioValue = parseFloat(o.totalValue?.replace(/[$,\s\u202F\u00A0â¯]/g, '') || '0');
+							const top5Positions = getTop5BiggestPositions(items, totalPortfolioValue);
+							const totalTop5Value = top5Positions.reduce((sum, pos) => sum + pos.totalValue, 0);
+							const totalTop5Percentage = totalPortfolioValue > 0 ? (totalTop5Value / totalPortfolioValue) * 100 : 0;
+							
+							return (
+								<>
+									{/* Summary */}
+									<div style={{ 
+										display: 'flex', 
+										alignItems: 'center', 
+										gap: '40px', 
+										marginBottom: '32px',
+										padding: '20px',
+										backgroundColor: '#f8f9fa',
+										borderRadius: '6px'
+									}}>
+										<div>
+											<div style={{ 
+												fontSize: '12px', 
+												fontWeight: 500, 
+												color: '#6c7281', 
+												letterSpacing: '0.02em',
+												textTransform: 'uppercase',
+												marginBottom: '8px'
+											}}>
+												Combined Value
+											</div>
+											<div style={{ 
+												fontSize: '28px', 
+												fontWeight: 700, 
+												color: '#1a1d29',
+												fontFamily: '"SF Mono", "Monaco", monospace'
+											}}>
+												{formatTokensReceived('$' + totalTop5Value.toLocaleString())}
+											</div>
+										</div>
+										<div>
+											<div style={{ 
+												fontSize: '12px', 
+												fontWeight: 500, 
+												color: '#6c7281', 
+												letterSpacing: '0.02em',
+												textTransform: 'uppercase',
+												marginBottom: '8px'
+											}}>
+												% of Total Fund
+											</div>
+											<div style={{ 
+												fontSize: '28px', 
+												fontWeight: 700, 
+												color: '#059669',
+												fontFamily: '"SF Mono", "Monaco", monospace'
+											}}>
+												{totalTop5Percentage.toFixed(1)}%
+											</div>
+										</div>
+									</div>
+
+									{/* Table */}
+									<div style={{ 
+										border: '1px solid #e1e5e9',
+										borderRadius: '6px',
+										overflow: 'hidden'
+									}}>
+										<table style={{ 
+											width: '100%', 
+											borderCollapse: 'collapse',
+											fontSize: '13px',
+											fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+											tableLayout: 'fixed'
+										}}>
+											<thead>
+												<tr style={{ 
+													backgroundColor: '#f8f9fa',
+													borderBottom: '1px solid #e1e5e9'
+												}}>
+													<th style={{ 
+														textAlign: 'left', 
+														padding: '12px 16px', 
+														fontWeight: 500, 
+														fontSize: '11px', 
+														letterSpacing: '0.02em', 
+														textTransform: 'uppercase', 
+														color: '#6c7281',
+														width: '200px'
+													}}>
+														Name
+													</th>
+													<th style={{ 
+														textAlign: 'right', 
+														padding: '12px 16px', 
+														fontWeight: 500, 
+														fontSize: '11px', 
+														letterSpacing: '0.02em', 
+														textTransform: 'uppercase', 
+														color: '#6c7281',
+														width: '140px'
+													}}>
+														Total Value
+													</th>
+													<th style={{ 
+														textAlign: 'right', 
+														padding: '12px 16px', 
+														fontWeight: 500, 
+														fontSize: '11px', 
+														letterSpacing: '0.02em', 
+														textTransform: 'uppercase', 
+														color: '#6c7281',
+														width: '120px'
+													}}>
+														Buy Price
+													</th>
+													<th style={{ 
+														textAlign: 'right', 
+														padding: '12px 16px', 
+														fontWeight: 500, 
+														fontSize: '11px', 
+														letterSpacing: '0.02em', 
+														textTransform: 'uppercase', 
+														color: '#6c7281',
+														width: '120px'
+													}}>
+														Current Price
+													</th>
+													<th style={{ 
+														textAlign: 'right', 
+														padding: '12px 16px', 
+														fontWeight: 500, 
+														fontSize: '11px', 
+														letterSpacing: '0.02em', 
+														textTransform: 'uppercase', 
+														color: '#6c7281',
+														width: '100px'
+													}}>
+														Avg Sell Price
+													</th>
+													<th style={{ 
+														textAlign: 'right', 
+														padding: '12px 16px', 
+														fontWeight: 500, 
+														fontSize: '11px', 
+														letterSpacing: '0.02em', 
+														textTransform: 'uppercase', 
+														color: '#6c7281',
+														width: '140px'
+													}}>
+														% of Portfolio
+													</th>
+												</tr>
+											</thead>
+											<tbody>
+												{top5Positions.map((position, index) => (
+													<tr key={position.name} style={{ 
+														backgroundColor: index % 2 === 0 ? '#ffffff' : '#fafbfc',
+														borderBottom: index < top5Positions.length - 1 ? '1px solid #f1f3f4' : 'none'
+													}}>
+														<td style={{ 
+															padding: '12px 16px', 
+															fontWeight: 500, 
+															color: '#1a1d29' 
+														}}>
+															{position.name}
+														</td>
+														<td style={{ 
+															padding: '12px 16px', 
+															textAlign: 'right', 
+															fontWeight: 500, 
+															color: '#1a1d29',
+															fontFamily: '"SF Mono", "Monaco", monospace'
+														}}>
+															{formatTokensReceived('$' + position.totalValue.toLocaleString())}
+														</td>
+														<td style={{ 
+															padding: '12px 16px', 
+															textAlign: 'right', 
+															fontWeight: 400, 
+															color: '#6c7281',
+															fontFamily: '"SF Mono", "Monaco", monospace'
+														}}>
+															{position.buyPrice ? formatPrice(position.buyPrice) : '-'}
+														</td>
+														<td style={{ 
+															padding: '12px 16px', 
+															textAlign: 'right', 
+															fontWeight: 400, 
+															color: '#6c7281',
+															fontFamily: '"SF Mono", "Monaco", monospace'
+														}}>
+															{position.currentPrice ? formatPrice(position.currentPrice) : '-'}
+														</td>
+														<td style={{ 
+															padding: '12px 16px', 
+															textAlign: 'right', 
+															fontWeight: 400, 
+															color: '#6c7281',
+															fontFamily: '"SF Mono", "Monaco", monospace'
+														}}>
+															{position.avgSellPrice ? formatPrice(position.avgSellPrice) : '-'}
+														</td>
+														<td style={{ 
+															padding: '12px 16px', 
+															textAlign: 'right', 
+															fontWeight: 500, 
+															color: '#059669',
+															fontFamily: '"SF Mono", "Monaco", monospace'
+														}}>
+															{position.percentage.toFixed(1)}%
+														</td>
+													</tr>
+												))}
+											</tbody>
+										</table>
+									</div>
+								</>
+							);
+						})()}
+					</div>
+				</div>
+
+				{/* Upcoming Token Unlocks */}
+				{listedProjects.nextUnlockAmount && listedProjects.nextUnlockDaysDetailed && (() => {
+					// Parse the unlock amount and only show if above $1000
+					const unlockValue = parseFloat(listedProjects.nextUnlockAmount?.replace(/[$,\s\u202F\u00A0â¯]/g, '') || '0');
+					return unlockValue > 1000;
+				})() && (
+					<div style={{ 
+						backgroundColor: '#ffffff',
+						border: '1px solid #e1e5e9',
+						borderRadius: '8px',
 						marginBottom: '40px',
 						boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
 						overflow: 'hidden'
@@ -2569,28 +4594,8 @@ export default function HomePage() {
 					<VestingChart data={data.vestingChart} />
 				)}
 
-				{/* Blockchain Category Charts */}
-				{data?.blockchainCategories && data.blockchainCategories.length > 0 && (
-					<>
-						<BlockchainCategoryDonutChart data={data.blockchainCategories} />
-						<BlockchainCategoryBarChart data={data.blockchainCategories} />
-					</>
-				)}
 				
-				{/* Debug: Show vesting data status */}
-				{process.env.NODE_ENV === 'development' && (
-					<div style={{ 
-						backgroundColor: '#f0f0f0', 
-						padding: '10px', 
-						margin: '10px 0',
-						fontSize: '12px',
-						fontFamily: 'monospace'
-					}}>
-						Vesting Debug: {data?.vestingChart ? `${data.vestingChart.length} items` : 'No vesting data'}
-						<br />
-						Blockchain Categories Debug: {data?.blockchainCategories ? `${data.blockchainCategories.length} categories` : 'No blockchain category data'}
-					</div>
-				)}
+
 
 				{/* Investment Portfolio Table */}
 				<div style={{ 
@@ -2619,7 +4624,7 @@ export default function HomePage() {
 							margin: 0,
 							fontWeight: 400
 						}}>
-							Detailed performance metrics for {items.length} active investments
+							Detailed performance metrics for {listedProjects?.totalInvestments || 0} investments
 						</p>
 					</div>
 				<div style={{ overflowX: 'auto' }}>
@@ -2635,8 +4640,9 @@ export default function HomePage() {
 									backgroundColor: '#f8f9fa',
 									borderBottom: '1px solid #e1e5e9'
 								}}>
-								{COLUMNS.map(col => {
+								{COLUMNS.map((col, index) => {
 									const active = sortKey === col.key;
+									const isFirstColumn = index === 0;
 									return (
 										<th
 											key={col.key}
@@ -2654,9 +4660,11 @@ export default function HomePage() {
 												background: active ? '#f0f4ff' : 'transparent',
 												borderBottom: active ? '2px solid #2563eb' : '2px solid transparent',
 												transition: 'all 0.15s ease',
-												position: 'relative',
-												minWidth: col.key === 'vesting' ? '200px' : 'auto',
-												width: col.key === 'vesting' ? '200px' : 'auto'
+												position: isFirstColumn ? 'sticky' : 'relative',
+												left: isFirstColumn ? '0' : 'auto',
+												zIndex: isFirstColumn ? 30 : 1,
+												minWidth: col.key === 'vesting' ? '200px' : isFirstColumn ? '200px' : 'auto',
+												width: col.key === 'vesting' ? '200px' : isFirstColumn ? '200px' : 'auto'
 											}}
 											onMouseEnter={(e) => {
 												if (!active) {
@@ -2693,6 +4701,7 @@ export default function HomePage() {
 											name: i.name, 
 											buyPrice: i.buyPrice, 
 											currentPrice: i.currentPrice, 
+											avgSellPrice: i.avgSellPrice,
 											vesting: i.vesting 
 										});
 									}
@@ -2710,15 +4719,30 @@ export default function HomePage() {
 											}}
 											onMouseEnter={(e) => {
 												e.currentTarget.style.background = '#f8f9fa';
+												// Update sticky column background on hover
+												const firstCell = e.currentTarget.querySelector('td:first-child') as HTMLElement;
+												if (firstCell) firstCell.style.backgroundColor = '#f8f9fa';
 											}}
 											onMouseLeave={(e) => {
 												e.currentTarget.style.background = rowBg;
+												// Restore sticky column background
+												const firstCell = e.currentTarget.querySelector('td:first-child') as HTMLElement;
+												if (firstCell) firstCell.style.backgroundColor = rowBg;
 											}}
 									>
 											<td style={{ 
 												padding: '12px 16px', 
 												fontWeight: 400,
-												borderRight: '1px solid #f1f3f4'
+												borderRight: '1px solid #f1f3f4',
+												position: 'sticky',
+												left: '0',
+												zIndex: 25,
+												backgroundColor: rowBg,
+												minWidth: '200px',
+												maxWidth: '200px',
+												whiteSpace: 'nowrap',
+												overflow: 'hidden',
+												textOverflow: 'ellipsis'
 											}}>
 												<a 
 													href={`/investments/${encodeURIComponent(i.name.toLowerCase().replace(/\s+/g, '-'))}`} 
@@ -2831,11 +4855,21 @@ export default function HomePage() {
 								sortKey={sortKey}
 								sortDir={sortDir}
 								individualVestingData={data?.individualVestingData?.[selectedPortfolio]}
+								overviewInvestments={items}
+								data={data}
 							/>
 						)}
 					</>
 				)}
 			</div>
 		</div>
+			
+			<style jsx>{`
+				@keyframes spin {
+					0% { transform: rotate(0deg); }
+					100% { transform: rotate(360deg); }
+				}
+			`}</style>
+		</>
 	);
 }

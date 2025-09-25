@@ -3,7 +3,7 @@
 export async function GET() {
     try {
 		// Add parameter to request blockchain category data from B157:M212
-		const url = 'https://script.google.com/macros/s/AKfycbx5JNA13D_bkZA14LJ_ffJ5OVwo0n4efZ56yWr37Ff-Agc7-pUB19klE-HvdO67SLmB/exec?token=blueeyeswillrule&includeBlockchainCategories=true';
+		const url = 'https://script.google.com/macros/s/AKfycbwPXZhIDoumMOw26oVcnJjGZlI_kw_l2f0luUh5RYdrhjYyPIq36ZujIxdBip6IdOeQ/exec?token=blueeyeswillrule&includeBlockchainCategories=true';
         console.log('API: Fetching from URL:', url);
         const res = await fetch(url, { cache: 'no-store' });
         if (!res.ok) throw new Error(`Upstream error ${res.status}`);
