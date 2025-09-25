@@ -1557,13 +1557,15 @@ function BlockchainCategoryBarChart({ data }: { data: BlockchainCategory[] }) {
 	);
 }
 
-function Stat({ label, value, trend, subtitle, customColor }: { 
+function Stat({ label, value, trend, subtitle, customColor, tooltip }: { 
 	label: string; 
 	value: string | number | null | undefined;
 	trend?: 'positive' | 'negative' | 'neutral';
 	subtitle?: string;
 	customColor?: string;
+	tooltip?: string;
 }) {
+	const [showTooltip, setShowTooltip] = useState(false);
 	const getTrendColor = () => {
 		if (customColor) return customColor;
 		switch (trend) {
@@ -1580,13 +1582,16 @@ function Stat({ label, value, trend, subtitle, customColor }: {
 			borderRadius: '4px',
 			padding: '24px',
 			boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
-			transition: 'all 0.15s ease'
+			transition: 'all 0.15s ease',
+			position: 'relative'
 		}}
 		onMouseEnter={(e) => {
 			e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.08)';
+			if (tooltip) setShowTooltip(true);
 		}}
 		onMouseLeave={(e) => {
 			e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.04)';
+			if (tooltip) setShowTooltip(false);
 		}}>
 			<div style={{ marginBottom: 12 }}>
 				<div style={{ 
@@ -1618,6 +1623,41 @@ function Stat({ label, value, trend, subtitle, customColor }: {
 			}}>
 				{value ?? '—'}
 			</div>
+			
+			{/* Tooltip */}
+			{tooltip && showTooltip && (
+				<div style={{
+					position: 'absolute',
+					top: '-60px',
+					left: '50%',
+					transform: 'translateX(-50%)',
+					backgroundColor: '#1a1d29',
+					color: 'white',
+					padding: '8px 12px',
+					borderRadius: '6px',
+					fontSize: '12px',
+					fontWeight: 400,
+					zIndex: 1000,
+					boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+					maxWidth: '300px',
+					whiteSpace: 'normal',
+					textAlign: 'center',
+					lineHeight: 1.4
+				}}>
+					{tooltip}
+					<div style={{
+						position: 'absolute',
+						top: '100%',
+						left: '50%',
+						transform: 'translateX(-50%)',
+						width: 0,
+						height: 0,
+						borderLeft: '6px solid transparent',
+						borderRight: '6px solid transparent',
+						borderTop: '6px solid #1a1d29'
+					}} />
+				</div>
+			)}
 		</div>
 	);
 }
@@ -1900,7 +1940,7 @@ function IndividualPortfolioDashboard({
 								value={formatTokensReceived(portfolio.summary.realisedValue)}
 							trend="neutral"
 										customColor="#000000"
-										subtitle="Cash returned to fund"
+										subtitle="Return from all token sales"
 						/>
 						<Stat 
 										label="Total Value" 
@@ -1938,7 +1978,7 @@ function IndividualPortfolioDashboard({
 										label="UNREALISED ROI" 
 										value={formatROI(portfolio.summary.unrealisedRoi)} 
 										trend={portfolio.summary.unrealisedRoi && parseFloat(portfolio.summary.unrealisedRoi.replace('x', '')) >= 1 ? "positive" : "negative"}
-										subtitle="Overall return multiple"
+										subtitle="Unrealised return multiple"
 						/>
 					</div>
 							</div>
@@ -2130,12 +2170,14 @@ function IndividualPortfolioDashboard({
 									trend="neutral"
 									customColor="#000000"
 									subtitle={`${receivedPercentage.toFixed(1)}% of total invested`}
+									tooltip="Calculated as the sum product of each investment amount times the % tokens received for that investment"
 								/>
 								<Stat 
 									label="Return on tokens received" 
 									value={`${returnOnTokensReceived.toFixed(2)}x`} 
 									trend={returnOnTokensReceived > 1 ? "positive" : "negative"}
 									subtitle="Including sold and liquid tokens"
+									tooltip="Calculated as value of liquid + realised value / Received from total invested"
 								/>
 							</div>
 						</div>
@@ -3847,12 +3889,14 @@ export default function HomePage() {
 							trend="neutral"
 							customColor="#000000"
 							subtitle={`${formatPercentage(listedProjects.tokensReceivedPercentage)} of total invested`}
+							tooltip="Calculated as the sum product of each investment amount times the % tokens received for that investment"
 						/>
 						<Stat 
 							label="Return on tokens received" 
 							value={formatTokensROI(listedProjects.tokensReceivedROI)} 
 							trend={listedProjects.tokensReceivedROI && parseFloat(listedProjects.tokensReceivedROI.replace('x', '')) > 1 ? "positive" : "negative"}
 							subtitle="Including sold and liquid tokens"
+							tooltip="Calculated as value of liquid + realised value / Received from total invested"
 						/>
 					</div>
 					
