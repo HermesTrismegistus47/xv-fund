@@ -1805,18 +1805,17 @@ function IndividualPortfolioDashboard({
 		{ key: 'totalInvested', label: 'Total Invested', numeric: true },
 		{ key: 'share', label: 'Share %', numeric: true },
 		{ key: 'totalValue', label: 'Total Value', numeric: true },
-		{ key: 'realisedValue', label: 'Realised Value', numeric: true },  // Moved before P&L
+		{ key: 'realisedValue', label: 'Realised Value', numeric: true },
 		{ key: 'realisedPnL', label: 'Realised P&L', numeric: true },
-		{ key: 'unrealisedValue', label: 'Unrealised Value', numeric: true },
-		{ key: 'unrealisedRoi', label: 'Unrealised ROI', numeric: true },  // Renamed from ROI
+		{ key: 'unrealisedRoi', label: 'Unrealised ROI', numeric: true },
 		{ key: 'realisedRoi', label: 'Realised ROI', numeric: true },
-		{ key: 'outstandingUSDC', label: 'Outstanding USDC', numeric: true },  // Outstanding Distributions
-		{ key: 'outstandingETH', label: 'Outstanding ETH', numeric: true },
-		{ key: 'outstandingSOL', label: 'Outstanding SOL', numeric: true },
-		{ key: 'liquidValue', label: 'Liquid Value', numeric: true },
 		{ key: 'dpi', label: 'DPI', numeric: true },
 		{ key: 'percentReceived', label: '% Received', numeric: true },
 		{ key: 'percentSold', label: '% Sold', numeric: true },
+		{ key: 'outstandingUSDC', label: 'Outstanding USDC', numeric: true },
+		{ key: 'outstandingETH', label: 'Outstanding ETH', numeric: true },
+		{ key: 'outstandingSOL', label: 'Outstanding SOL', numeric: true },
+		{ key: 'liquidValue', label: 'Liquid Value', numeric: true },
 	];
 
 	const sorted = useMemo(() => {
@@ -3284,7 +3283,7 @@ function IndividualPortfolioDashboard({
 												transition: 'all 0.15s ease',
 												position: isFirstColumn ? 'sticky' : 'relative',
 												left: isFirstColumn ? '0' : 'auto',
-												zIndex: isFirstColumn ? 20 : 1,
+												zIndex: isFirstColumn ? 30 : 1,
 												minWidth: isFirstColumn ? '200px' : 'auto',
 												maxWidth: isFirstColumn ? '200px' : 'auto'
 											}}
@@ -3351,7 +3350,7 @@ function IndividualPortfolioDashboard({
 											borderRight: '1px solid #f1f3f4',
 											position: 'sticky',
 											left: '0',
-											zIndex: 15,
+											zIndex: 25,
 											backgroundColor: rowBg,
 											minWidth: '200px',
 											maxWidth: '200px'
@@ -3372,7 +3371,7 @@ function IndividualPortfolioDashboard({
 											let formattedValue = formatCell(value as string) || '-';
 											
 											if (col.key === 'totalInvested' || col.key === 'totalValue' || col.key === 'realisedValue' || 
-												col.key === 'unrealisedValue' || col.key === 'realisedPnL' || col.key === 'liquidValue') {
+												col.key === 'realisedPnL' || col.key === 'liquidValue') {
 												formattedValue = formatTokensReceived(value as string);
 											} else if (col.key === 'share') {
 												formattedValue = formatPercentage(value as string);
